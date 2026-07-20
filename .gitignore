@@ -1,0 +1,14 @@
+node_modules
+dist/
+example_acount/
+DESIGN.md
+muti.ps1
+src-tauri/target/
+.reasonix/
+reasonix.toml
+.codegraph/
+.bundle-assets/
+.claude/
+.impeccable/
+/.codex-vite*.log
+/temp.txt

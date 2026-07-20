@@ -1,0 +1,50 @@
+{
+  "name": "d2rhub",
+  "private": true,
+  "version": "0.7.5",
+  "description": "Windows multi-account manager and OCR run tracker for Diablo II: Resurrected",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gjy991229/D2RHub.git"
+  },
+  "homepage": "https://github.com/gjy991229/D2RHub#readme",
+  "bugs": {
+    "url": "https://github.com/gjy991229/D2RHub/issues"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:full": "cross-env VITE_ENABLE_OCR=true tauri build",
+    "build:lite": "cross-env VITE_ENABLE_OCR=false tauri build --config src-tauri/tauri.lite.conf.json -- --no-default-features",
+    "build:all": "npm run build:full && npm run build:lite",
+    "test": "node scripts/run-shortcut-tests.cjs",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0",
+    "lucide-react": "^0.460.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "cross-env": "^7.0.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

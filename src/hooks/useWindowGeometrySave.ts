@@ -1,0 +1,68 @@
+import { useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+export function useWindowGeometrySave(commandName: string, minWidth: number = 100, minHeight: number = 100) {
+  const saveTimeout = useRef<number | null>(null);
+
+  const scheduleGeometrySave = useCallback(() => {
+    if (saveTimeout.current !== null) {
+      window.clearTimeout(saveTimeout.current);
+    }
+    saveTimeout.current = window.setTimeout(async () => {
+      try {
+        const win = getCurrentWindow();
+        const minimized = await win.isMinimized();
+        if (minimized) return;
+
+        const pos = await win.outerPosition();
+        if (pos.x <= -32000 || pos.y <= -32000) return;
+
+        const size = await win.outerSize();
+        const scale = await win.scaleFactor();
+        const w = Math.round(size.width / scale);
+        const h = Math.round(size.height / scale);
+        if (w < minWidth || h < minHeight) return;
+
+        const geometry = {
+          x: Math.round(pos.x / scale),
+          y: Math.round(pos.y / scale),
+          width: w,
+          height: h,
+        };
+
+        if (commandName.startsWith("localStorage:")) {
+          const key = commandName.replace("localStorage:", "");
+          localStorage.setItem(key, JSON.stringify(geometry));
+        } else {
+          await invoke(commandName, { geometry });
+        }
+      } catch (err) {
+        console.error(`Failed to save geometry using ${commandName}:`, err);
+      }
+    }, 500);
+  }, [commandName, minWidth, minHeight]);
+
+  useEffect(() => {
+    let unlistenResize: (() => void) | undefined;
+    let unlistenMove: (() => void) | undefined;
+
+    (async () => {
+      try {
+        const win = getCurrentWindow();
+        unlistenResize = await win.onResized(() => scheduleGeometrySave());
+        unlistenMove = await win.onMoved(() => scheduleGeometrySave());
+      } catch (err) {
+        console.error("Failed to listen for geometry changes:", err);
+      }
+    })();
+
+    return () => {
+      unlistenResize?.();
+      unlistenMove?.();
+      if (saveTimeout.current !== null) {
+        window.clearTimeout(saveTimeout.current);
+      }
+    };
+  }, [scheduleGeometrySave]);
+}

@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>运行统计 - D2RHub</title>
+<style>
+  :root {
+    --bg-main: #09090b;
+    --bg-surface: #18181b;
+    --bg-panel: #27272a;
+    --border: #3f3f46;
+    --border-hover: #52525b;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --danger: #ef4444;
+    --danger-hover: #f87171;
+    --success: #10b981;
+    --radius: 8px;
+  }
+  [data-theme="light"] {
+    --bg-main: #f4f4f5;
+    --bg-surface: #ffffff;
+    --bg-panel: #f4f4f5;
+    --border: #e4e4e7;
+    --border-hover: #d4d4d8;
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --accent: #2563eb;
+    --accent-hover: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tabs { display: flex; gap: 1rem; }
+  .tab-btn {
+    background: none; border: none; color: var(--text-secondary);
+    padding: 0.5rem 1rem; border-radius: var(--radius); cursor: pointer;
+    font-size: 1rem; transition: all 0.2s;
+  }
+  .tab-btn:hover { background: var(--bg-panel); color: var(--text-primary); }
+  .tab-btn.active { background: var(--bg-panel); color: var(--accent); font-weight: bold; }
+  .theme-toggle {
+    background: transparent; border: 1px solid var(--border); color: var(--text-primary);
+    padding: 0.25rem 0.5rem; border-radius: var(--radius); cursor: pointer;
+  }
+  main { flex: 1; overflow-y: auto; padding: 2rem; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .grid-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;
+  }
+  .card-title { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+  .card-value { font-size: 1.8rem; font-weight: 600; color: var(--text-primary); }
+  .toolbar {
+    display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;
+    background: var(--bg-surface); padding: 1rem; border-radius: var(--radius);
+    border: 1px solid var(--border); margin-bottom: 1rem;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 0.25rem; }
+  .form-group label { font-size: 0.8rem; color: var(--text-secondary); }
+  .input, .select {
+    background: var(--bg-main); border: 1px solid var(--border);
+    color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: var(--radius);
+  }
+  .btn {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: var(--radius);
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn-danger { color: var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .chart-container { position: relative; height: 350px; width: 100%; margin-top: 1rem; }
+  table { width: 100%; border-collapse: collapse; text-align: left; }
+  .table-scroll { width: 100%; overflow-x: auto; }
+  th, td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg-panel); color: var(--text-secondary); font-size: 0.9rem; }
+  tr:hover td { background: var(--bg-panel); }
+  .tag {
+    background: var(--bg-panel); border: 1px solid var(--border); padding: 0.1rem 0.5rem;
+    border-radius: 999px; font-size: 0.8rem; margin-right: 0.25rem; display: inline-block;
+  }
+  .tag-rune { background: rgba(59, 130, 246, 0.1); color: var(--accent); border-color: rgba(59, 130, 246, 0.2); }
+  .tag-rune-del { cursor: pointer; color: var(--danger); margin-left: 0.25rem; font-weight: bold; }
+
+  .css-chart { display: flex; align-items: flex-end; justify-content: space-around; height: 100%; padding-top: 20px; gap: 4px; }
+  .css-bar-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+  .css-bar-group { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 100%; gap: 2px; }
+  .css-bar { width: 100%; transform-origin: bottom; animation: grow-y 0.5s ease-out both; }
+  .css-label { font-size: 10px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center; color: var(--text-secondary); }
+  .css-chart-horiz { display: flex; flex-direction: column; gap: 8px; height: 100%; overflow-y: auto; padding-right: 8px; }
+  .css-bar-row { display: flex; align-items: center; gap: 8px; }
+  .css-row-label { width: 100px; text-align: right; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+  .css-row-bar-bg { flex: 1; background: var(--bg-panel); height: 16px; border-radius: 4px; overflow: hidden; }
+  .css-row-bar { height: 100%; transform-origin: left; animation: grow-x 0.5s ease-out both; }
+  .css-row-val { width: 30px; font-size: 11px; color: var(--text-primary); text-align: left; }
+  .empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 0.9rem; }
+  .tag-rune-del { cursor: pointer; color: var(--danger); margin-left: 0.25rem; font-weight: bold; }
+  .scene-rename { cursor: pointer; border-bottom: 1px dashed var(--border); }
+  @keyframes grow-y { from { transform: scaleY(0); opacity: 0.35; } to { transform: scaleY(1); opacity: 1; } }
+  @keyframes grow-x { from { transform: scaleX(0); opacity: 0.35; } to { transform: scaleX(1); opacity: 1; } }
+  @media (max-width: 720px) {
+    header { padding: 0.9rem 1rem; gap: 0.75rem; }
+    .tabs { gap: 0.4rem; }
+    .tab-btn { padding: 0.45rem 0.65rem; font-size: 0.9rem; white-space: nowrap; }
+    .theme-toggle { padding: 0.35rem 0.55rem; }
+    main { padding: 1rem; }
+    .toolbar { gap: 0.75rem; }
+    .form-group { min-width: min(145px, 100%); }
+    .chart-container { height: 260px; }
+    th, td { padding: 0.65rem 0.75rem; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="tabs">
+    <button class="tab-btn active" data-target="view-dashboard">高级仪表盘</button>
+    <button class="tab-btn" data-target="view-records">原始记录管理</button>
+  </div>
+  <div><button class="theme-toggle" id="themeToggle">切换主题</button></div>
+</header>
+
+<main>
+  <div id="view-dashboard" class="view active">
+    <!-- Controls -->
+    <div class="toolbar">
+      <div class="form-group">
+        <label>日期范围 - 起</label>
+        <input type="date" class="input" id="filter-date-start">
+      </div>
+      <div class="form-group">
+        <label>日期范围 - 止</label>
+        <input type="date" class="input" id="filter-date-end">
+      </div>
+      <div class="form-group">
+        <label>角色</label>
+        <select class="select" id="filter-character">
+          <option value="">所有角色</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>场景</label>
+        <select class="select" id="filter-scene">
+          <option value="">所有场景</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>掉落过滤</label>
+        <select class="select" id="filter-drop">
+          <option value="">全部</option>
+          <option value="has_drop">有掉落</option>
+          <option value="high_rune">高阶符文 (>=#24)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>分组依据 (用于分组图表)</label>
+        <select class="select" id="group-by">
+          <option value="scene">场景</option>
+          <option value="character">角色</option>
+          <option value="date">日期 (YYYY-MM-DD)</option>
+          <option value="weekday">星期</option>
+          <option value="hour">小时 (0-23)</option>
+          <option value="rune">符文 (Rune)</option>
+        </select>
+      </div>
+      <div style="flex: 1;"></div>
+      <button class="btn" id="btn-apply-filters">应用分析</button>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid-cards">
+      <div class="card"><div class="card-title">过滤后运行次数</div><div class="card-value" id="kpi-runs">0</div></div>
+      <div class="card"><div class="card-title">过滤后总耗时</div><div class="card-value" id="kpi-time">0h 0m</div></div>
+      <div class="card"><div class="card-title">过滤后掉落数</div><div class="card-value" id="kpi-drops">0</div></div>
+      <div class="card"><div class="card-title">高阶符文 (>=24)</div><div class="card-value" id="kpi-high-runes">0</div></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;">总览趋势 / 时间分布</h3>
+      <div class="chart-container" id="chart-trend"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:1rem;">分组排行统计</h3>
+      <div class="chart-container" id="chart-grouped"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:1rem;">符文/物品 掉落分布</h3>
+      <div class="chart-container" id="chart-runes"></div>
+    </div>
+  </div>
+
+  <div id="view-records" class="view">
+    <div class="toolbar">
+      <input type="text" class="input" id="records-search" placeholder="搜索角色/场景/物品..." style="flex:1;">
+      <button class="btn" id="btn-batch-rename-scene">批量重命名场景</button>
+      <button class="btn" id="btn-export-csv">导出 CSV</button>
+      <button class="btn" id="btn-refresh">刷新数据</button>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div class="table-scroll">
+        <table id="records-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>时间</th>
+              <th>角色</th>
+              <th>场景</th>
+              <th>耗时 (s)</th>
+              <th>掉落</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+
+  // Theme Toggle
+  const themeToggle = document.getElementById('themeToggle');
+  const htmlEl = document.documentElement;
+  const savedTheme = localStorage.getItem('d2rhub-theme') || 'dark';
+  htmlEl.setAttribute('data-theme', savedTheme);
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = htmlEl.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    htmlEl.setAttribute('data-theme', newTheme);
+    localStorage.setItem('d2rhub-theme', newTheme);
+  });
+
+  // Tabs
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.target).classList.add('active');
+    });
+  });
+
+  // State
+  let STATE = { records: [] };
+  const RAW_STATS_DATA = {{STATS_DATA}};
+  const STATS_API_PORT = {{STATS_API_PORT}};
+
+  function initData() {
+    STATE.records = RAW_STATS_DATA.records || [];
+    populateFilters();
+    analyzeData();
+    renderRecords();
+  }
+
+  function escapeHtml(v) { return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function populateFilters() {
+    const chars = new Set();
+    const scenes = new Set();
+    STATE.records.forEach(r => {
+      if(r.character_name) chars.add(r.character_name);
+      if(r.scene_name) scenes.add(r.scene_name);
+    });
+
+    const charSelect = document.getElementById('filter-character');
+    charSelect.options.length = 1;
+    [...chars].sort().forEach(c => charSelect.add(new Option(c, c)));
+    const sceneSelect = document.getElementById('filter-scene');
+    sceneSelect.options.length = 1;
+    [...scenes].sort().forEach(s => sceneSelect.add(new Option(s, s)));
+  }
+
+  document.getElementById('btn-apply-filters').addEventListener('click', analyzeData);
+
+  function analyzeData() {
+    const ds = document.getElementById('filter-date-start').value;
+    const de = document.getElementById('filter-date-end').value;
+    const char = document.getElementById('filter-character').value;
+    const scene = document.getElementById('filter-scene').value;
+    const dropF = document.getElementById('filter-drop').value;
+    const groupBy = document.getElementById('group-by').value;
+
+    let filtered = STATE.records.filter(r => {
+      const dDate = (r.absolute_time || '').split(' ')[0];
+      if(ds && dDate < ds) return false;
+      if(de && dDate > de) return false;
+      if(char && r.character_name !== char) return false;
+      if(scene && r.scene_name !== scene) return false;
+
+      const drops = r.drops || [];
+      if(dropF === 'has_drop' && drops.length === 0) return false;
+      if(dropF === 'high_rune' && !drops.some(d => Number(d.rune_number) >= 24)) return false;
+      return true;
+    });
+
+    // KPI
+    let tTime = 0, tDrops = 0, tHigh = 0;
+    filtered.forEach(r => {
+      tTime += r.timer_seconds || 0;
+      tDrops += (r.drops || []).length;
+      tHigh += (r.drops || []).filter(d => Number(d.rune_number) >= 24).length;
+    });
+    document.getElementById('kpi-runs').textContent = filtered.length;
+    document.getElementById('kpi-time').textContent = Math.floor(tTime/3600) + 'h ' + Math.floor((tTime%3600)/60) + 'm';
+    document.getElementById('kpi-drops').textContent = tDrops;
+    document.getElementById('kpi-high-runes').textContent = tHigh;
+
+    renderTrendChart(filtered);
+    renderGroupedChart(filtered, groupBy);
+    renderRunesChart(filtered);
+  }
+
+  function getGroupKey(r, groupBy, drop) {
+    if(groupBy === 'rune') return drop ? (drop.rune_name || 'Unknown') : 'Unknown';
+    if(groupBy === 'scene') return r.scene_name || 'Unknown';
+    if(groupBy === 'character') return r.character_name || 'Unknown';
+    if(groupBy === 'date') return (r.absolute_time || '').split(' ')[0] || 'Unknown';
+    if(groupBy === 'hour') return (r.absolute_time || '').split(' ')[1]?.split(':')[0] || 'Unknown';
+    if(groupBy === 'weekday') {
+      const d = new Date(r.absolute_time || Date.now());
+      return ['日','一','二','三','四','五','六'][d.getDay()];
+    }
+    return 'Unknown';
+  }
+
+  function renderTrendChart(records) {
+    const container = document.getElementById('chart-trend');
+    if(records.length === 0) {
+      container.innerHTML = '<div class="empty-state">暂无数据</div>';
+      return;
+    }
+    const dates = {};
+    records.forEach(r => {
+      const d = (r.absolute_time || '').split(' ')[0] || 'Unknown';
+      if(!dates[d]) dates[d] = 0;
+      dates[d]++;
+    });
+    const sorted = Object.keys(dates).sort();
+    const maxVal = Math.max(...sorted.map(d => dates[d]), 1);
+
+    let html = '<div class="css-chart">';
+    sorted.forEach(d => {
+      const pct = (dates[d] / maxVal) * 100;
+      html += `
+        <div class="css-bar-container" title="${escapeHtml(d)}: ${dates[d]}">
+          <div class="css-bar-group">
+            <div class="css-bar" style="height: ${pct}%; background: #3b82f6;"></div>
+          </div>
+          <div class="css-label">${escapeHtml(d.substring(5))}</div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function renderGroupedChart(records, groupBy) {
+    const container = document.getElementById('chart-grouped');
+    if(records.length === 0) {
+      container.innerHTML = '<div class="empty-state">暂无数据</div>';
+      return;
+    }
+
+    const groups = {};
+    if(groupBy === 'rune') {
+      records.forEach(r => {
+        (r.drops || []).forEach(d => {
+          const k = getGroupKey(r, groupBy, d);
+          if(!groups[k]) groups[k] = { runs: 0, drops: 0 };
+          groups[k].drops++;
+        });
+      });
+    } else {
+      records.forEach(r => {
+        const k = getGroupKey(r, groupBy);
+        if(!groups[k]) groups[k] = { runs: 0, drops: 0 };
+        groups[k].runs++;
+        groups[k].drops += (r.drops || []).length;
+      });
+    }
+
+    const sorted = Object.keys(groups).sort((a,b) => {
+      if(groupBy === 'rune') return groups[b].drops - groups[a].drops;
+      return groups[b].runs - groups[a].runs;
+    }).slice(0, 20);
+
+    if(sorted.length === 0) {
+      container.innerHTML = '<div class="empty-state">暂无数据</div>';
+      return;
+    }
+
+    const maxRuns = Math.max(...sorted.map(k => groups[k].runs), 1);
+    const maxDrops = Math.max(...sorted.map(k => groups[k].drops), 1);
+
+    let html = '<div class="css-chart">';
+    sorted.forEach(k => {
+      const rPct = (groups[k].runs / maxRuns) * 100;
+      const dPct = (groups[k].drops / maxDrops) * 100;
+      let bars = '';
+      if(groupBy === 'rune') {
+        bars = `<div class="css-bar" style="height: ${dPct}%; background: #10b981;" title="掉落: ${groups[k].drops}"></div>`;
+      } else {
+        bars = `
+          <div class="css-bar" style="height: ${rPct}%; background: #3b82f6;" title="运行: ${groups[k].runs}"></div>
+          <div class="css-bar" style="height: ${dPct}%; background: #10b981;" title="掉落: ${groups[k].drops}"></div>
+        `;
+      }
+      html += `
+        <div class="css-bar-container" title="${escapeHtml(k)}">
+          <div class="css-bar-group">${bars}</div>
+          <div class="css-label">${escapeHtml(k)}</div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function renderRunesChart(records) {
+    const container = document.getElementById('chart-runes');
+    let totalDrops = 0;
+    const counts = {};
+    records.forEach(r => {
+      (r.drops || []).forEach(d => {
+        const n = d.rune_name || 'Unknown';
+        counts[n] = (counts[n] || 0) + 1;
+        totalDrops++;
+      });
+    });
+    if(totalDrops === 0) {
+      container.innerHTML = '<div class="empty-state">暂无数据</div>';
+      return;
+    }
+    const sorted = Object.keys(counts).sort((a,b) => counts[b] - counts[a]).slice(0, 30);
+    const maxVal = Math.max(...sorted.map(k => counts[k]), 1);
+
+    let html = '<div class="css-chart-horiz">';
+    sorted.forEach(k => {
+      const pct = (counts[k] / maxVal) * 100;
+      html += `
+        <div class="css-bar-row">
+          <div class="css-row-label" title="${escapeHtml(k)}">${escapeHtml(k)}</div>
+          <div class="css-row-bar-bg">
+            <div class="css-row-bar" style="width: ${pct}%; background: #8b5cf6;"></div>
+          </div>
+          <div class="css-row-val">${counts[k]}</div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function renderRecords() {
+    const search = document.getElementById('records-search').value.toLowerCase();
+    const tbody = document.querySelector('#records-table tbody');
+    tbody.innerHTML = '';
+
+    if(STATE.records.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:2rem;">暂无数据</td></tr>';
+      return;
+    }
+
+    const filtered = STATE.records.filter(r => {
+      if(!search) return true;
+      const t = search;
+      if(r.character_name?.toLowerCase().includes(t)) return true;
+      if(r.scene_name?.toLowerCase().includes(t)) return true;
+      if(r.drops?.some(d => d.rune_name?.toLowerCase().includes(t))) return true;
+      return false;
+    }).sort((a,b) => (b.id||0) - (a.id||0)).slice(0, 100);
+
+    if(filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:2rem;">无匹配记录</td></tr>';
+      return;
+    }
+
+    filtered.forEach(r => {
+      const tr = document.createElement('tr');
+      const tdId = document.createElement('td'); tdId.textContent = r.id; tr.appendChild(tdId);
+      const tdTime = document.createElement('td'); tdTime.textContent = r.absolute_time; tr.appendChild(tdTime);
+      const tdChar = document.createElement('td'); tdChar.textContent = r.character_name; tr.appendChild(tdChar);
+
+      const tdScene = document.createElement('td');
+      const spanScene = document.createElement('span');
+      spanScene.className = 'scene-rename';
+      spanScene.setAttribute('data-id', r.id);
+      spanScene.textContent = r.scene_name;
+      tdScene.appendChild(spanScene);
+      tr.appendChild(tdScene);
+
+      const tdTimer = document.createElement('td'); tdTimer.textContent = (r.timer_seconds||0).toFixed(1); tr.appendChild(tdTimer);
+
+      const tdDrops = document.createElement('td');
+      (r.drops || []).forEach((d, idx) => {
+        const spanDrop = document.createElement('span');
+        spanDrop.className = 'tag tag-rune';
+        spanDrop.textContent = `#${d.rune_number} ${d.rune_name} `;
+
+        const delBtn = document.createElement('span');
+        delBtn.className = 'tag-rune-del';
+        delBtn.setAttribute('data-rid', r.id);
+        delBtn.setAttribute('data-didx', idx);
+        delBtn.textContent = '×';
+        spanDrop.appendChild(delBtn);
+
+        tdDrops.appendChild(spanDrop);
+      });
+      tr.appendChild(tdDrops);
+
+      const tdAction = document.createElement('td');
+      const btnDel = document.createElement('button');
+      btnDel.className = 'btn btn-danger btn-delete-record';
+      btnDel.setAttribute('data-id', r.id);
+      btnDel.textContent = '删除';
+      tdAction.appendChild(btnDel);
+      tr.appendChild(tdAction);
+
+      tbody.appendChild(tr);
+    });
+  }
+  document.getElementById('records-search').addEventListener('input', renderRecords);
+
+  const apiBase = `http://127.0.0.1:${STATS_API_PORT}`;
+  async function fetchRecords() {
+    try {
+      const res = await fetch(`${apiBase}/api/records`);
+      if(res.ok) {
+        const data = await res.json();
+        if(data && data.records) { STATE.records = data.records; initData(); }
+      }
+    } catch(e) { /* silent fail or ui hint */ }
+  }
+  document.getElementById('btn-refresh').addEventListener('click', fetchRecords);
+
+  // Event Delegation
+  document.addEventListener('click', async (e) => {
+    if(e.target.classList.contains('btn-delete-record')) {
+      const id = e.target.getAttribute('data-id');
+      if(!confirm(`删除 ID ${id}?`)) return;
+      try {
+        if((await fetch(`${apiBase}/api/records/${id}`, {method:'DELETE'})).ok) fetchRecords();
+      } catch(err) {}
+    } else if(e.target.classList.contains('tag-rune-del')) {
+      const rid = e.target.getAttribute('data-rid');
+      const didx = e.target.getAttribute('data-didx');
+      if(!confirm('删除此掉落?')) return;
+      try {
+        if((await fetch(`${apiBase}/api/records/${rid}/drops/${didx}`, {method:'DELETE'})).ok) fetchRecords();
+      } catch(err) {}
+    } else if(e.target.classList.contains('scene-rename')) {
+      const id = e.target.getAttribute('data-id');
+      const cname = e.target.textContent;
+      const n = prompt('重命名场景:', cname);
+      if(n && n !== cname) {
+        try {
+          if((await fetch(`${apiBase}/api/records/${id}/rename?to=${encodeURIComponent(n)}`, {method:'POST'})).ok) fetchRecords();
+        } catch(err) {}
+      }
+    }
+  });
+
+  document.getElementById('btn-batch-rename-scene').addEventListener('click', async () => {
+    const f = prompt('原名:'); if(!f) return;
+    const t = prompt('新名:'); if(!t || f===t) return;
+    try {
+      if((await fetch(`${apiBase}/api/scenes/rename?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`, {method:'POST'})).ok) fetchRecords();
+    } catch(e) {}
+  });
+
+  document.getElementById('btn-export-csv').addEventListener('click', () => {
+    let csv = '\uFEFFID,时间,角色,场景,耗时(s),掉落物品\n';
+    STATE.records.forEach(r => {
+      const d = r.drops ? r.drops.map(x=>x.rune_name).join(';') : '';
+      csv += [r.id, r.absolute_time||'', r.character_name||'', r.scene_name||'', r.timer_seconds||0, d].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
+    });
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'stats.csv';
+    a.click();
+  });
+  initData();
+</script>
+</body>
+</html>

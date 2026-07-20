@@ -1,0 +1,30 @@
+import React from "react";
+import { TopNav } from "./TopNav";
+
+interface DashboardProps {
+  onAbout: () => void;
+  onExit: () => void;
+  onOpenConfig: () => void;
+  onHelp: () => void;
+  onStats: () => void;
+  children: React.ReactNode;
+}
+
+export function Dashboard({
+  onAbout, onExit, onOpenConfig, onHelp, onStats, children,
+}: DashboardProps) {
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <TopNav
+        onAbout={onAbout}
+        onExit={onExit}
+        onOpenConfig={onOpenConfig}
+        onHelp={onHelp}
+        onStats={onStats}
+      />
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {children}
+      </div>
+    </div>
+  );
+}

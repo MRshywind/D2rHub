@@ -1,0 +1,8 @@
+# Tesseract/Leptonica 库路径 — UB Mannheim 5.5.0
+[env]
+LEPTONICA_INCLUDE_PATH = { value = "D:\\Tesseract\\include", force = true }
+LEPTONICA_LINK_PATHS = { value = "D:\\Tesseract\\lib", force = true }
+LEPTONICA_LINK_LIBS = { value = "leptonica", force = true }
+TESSERACT_INCLUDE_PATHS = { value = "D:\\Tesseract\\include", force = true }
+TESSERACT_LINK_PATHS = { value = "D:\\Tesseract\\lib", force = true }
+TESSERACT_LINK_LIBS = { value = "tesseract", force = true }

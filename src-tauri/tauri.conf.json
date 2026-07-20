@@ -1,0 +1,118 @@
+{
+    "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+    "productName": "D2RHub",
+    "version": "0.7.5",
+    "identifier": "com.d2rhub.app",
+    "build": {
+        "frontendDist": "../dist",
+        "devUrl": "http://localhost:1420",
+        "beforeDevCommand": "npm run dev",
+        "beforeBuildCommand": "npm run build"
+    },
+    "app": {
+        "windows": [
+            {
+                "title": "D2RHub",
+                "width": 1000,
+                "height": 618,
+                "minWidth": 430,
+                "minHeight": 360,
+                "resizable": true,
+                "maximizable": false,
+                "decorations": false,
+                "transparent": true,
+                "shadow": false,
+                "center": true,
+                "visible": false
+            },
+            {
+                "label": "overlay",
+                "title": "D2RHub Overlay",
+                "url": "overlay.html",
+                "width": 240,
+                "height": 280,
+                "x": 60,
+                "y": 60,
+                "minWidth": 200,
+                "minHeight": 180,
+                "resizable": true,
+                "maximizable": false,
+                "decorations": false,
+                "transparent": true,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "visible": false,
+                "shadow": false
+            },
+            {
+                "label": "ocr-debug",
+                "title": "D2RHub OCR 调试",
+                "url": "/ocr-debug",
+                "width": 500,
+                "height": 618,
+                "x": 0,
+                "y": 60,
+                "resizable": true,
+                "decorations": true,
+                "transparent": false,
+                "alwaysOnTop": false,
+                "skipTaskbar": false,
+                "visible": false,
+                "shadow": true
+            },
+            {
+                "label": "bongo-cat",
+                "title": "D2RHub Bongo Cat",
+                "url": "bongo-cat.html",
+                "width": 240,
+                "height": 400,
+                "resizable": false,
+                "maximizable": false,
+                "decorations": false,
+                "transparent": true,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "visible": false,
+                "shadow": false
+            }
+        ],
+        "security": {
+            "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+        }
+    },
+    "bundle": {
+        "active": true,
+        "targets": [
+            "msi",
+            "nsis"
+        ],
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.ico",
+            "icons/icon.png"
+        ],
+        "resources": [
+            "../docs/",
+            "../.bundle-assets/**/*"
+        ],
+        "windows": {
+            "wix": {
+                "language": "zh-CN"
+            },
+            "nsis": {
+                "installMode": "currentUser",
+                "languages": [
+                    "SimpChinese",
+                    "English"
+                ]
+            }
+        }
+    },
+    "plugins": {
+        "shell": {
+            "open": true
+        }
+    }
+}
