@@ -95,7 +95,7 @@
         ],
         "resources": [
             "../docs/",
-            "../.bundle-assets/**/*"
+            "../assets/**/*"
         ],
         "windows": {
             "wix": {

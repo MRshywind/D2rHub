@@ -5,19 +5,6 @@ fn main() {
 
     let mut windows = tauri_build::WindowsAttributes::new();
 
-    // Conditional Assets Bundling for OCR
-    let target_dir = std::path::Path::new("../.bundle-assets");
-    let _ = std::fs::remove_dir_all(&target_dir); // clean up old
-    let _ = std::fs::create_dir_all(&target_dir);
-    if std::env::var("CARGO_FEATURE_OCR").is_ok() {
-        let source_dir = std::path::Path::new("../assets");
-        if source_dir.exists() {
-            copy_dir_all(source_dir, target_dir).expect("Failed to copy assets");
-        }
-    }
-    // create empty file to satisfy tauri bundle glob match
-    let _ = std::fs::write(target_dir.join(".keep"), "");
-
     // Define the manifest with requireAdministrator
     let manifest = r#"
         <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -38,9 +25,8 @@ fn main() {
 
     windows = windows.app_manifest(manifest);
 
-    tauri_build::try_build(
-        tauri_build::Attributes::new().windows_attributes(windows)
-    ).expect("failed to run build script");
+    tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
+        .expect("failed to run build script");
 }
 
 fn get_version_from_config() -> String {
@@ -58,18 +44,4 @@ fn get_version_from_config() -> String {
         }
     }
     "0.1.0".to_string()
-}
-
-fn copy_dir_all(src: impl AsRef<std::path::Path>, dst: impl AsRef<std::path::Path>) -> std::io::Result<()> {
-    std::fs::create_dir_all(&dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        } else {
-            std::fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        }
-    }
-    Ok(())
 }
