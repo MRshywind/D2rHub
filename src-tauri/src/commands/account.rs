@@ -290,13 +290,13 @@ impl AccountManager {
     }
 }
 
-fn copy_system_settings_to_account(saved_games_path: &str, account_dir: &Path) -> Result<(), AppError> {
-    let src = Path::new(saved_games_path).join("Settings.json");
-    if !src.exists() {
-        return Err(AppError::FileError(format!(
-            "系统 Settings.json 不存在: {}",
-            src.to_string_lossy()
-        )));
+pub(crate) fn copy_system_settings_to_account_if_available(
+    saved_games_path: &Path,
+    account_dir: &Path,
+) -> Result<bool, AppError> {
+    let src = saved_games_path.join("Settings.json");
+    if !src.is_file() {
+        return Ok(false);
     }
 
     if !account_dir.exists() {
@@ -304,6 +304,29 @@ fn copy_system_settings_to_account(saved_games_path: &str, account_dir: &Path) -
     }
 
     std::fs::copy(&src, account_dir.join("Settings.json"))
+        .map_err(|e| AppError::FileError(format!("复制 Settings.json 失败: {}", e)))?;
+    Ok(true)
+}
+
+pub(crate) fn copy_account_settings_to_system(
+    account_dir: &Path,
+    saved_games_path: &Path,
+) -> Result<(), AppError> {
+    let src = account_dir.join("Settings.json");
+    if !src.is_file() {
+        return Err(AppError::FileError(format!(
+            "账号 Settings.json 不存在: {}。请先在画质配置中从系统配置创建账号独立配置",
+            src.display()
+        )));
+    }
+    if !saved_games_path.is_dir() {
+        return Err(AppError::FileError(format!(
+            "存档目录无效: {}。请在设置中修正存档目录",
+            saved_games_path.display()
+        )));
+    }
+
+    std::fs::copy(&src, saved_games_path.join("Settings.json"))
         .map_err(|e| AppError::FileError(format!("复制 Settings.json 失败: {}", e)))?;
     Ok(())
 }
@@ -469,7 +492,15 @@ pub fn create_account(
     let id = AccountManager::next_id(&cfg.accounts_dir);
     let dir = AccountManager::account_dir_checked(&cfg.accounts_dir, &id)?;
     std::fs::create_dir_all(&dir)?;
-    copy_system_settings_to_account(&cfg.saved_games_path, &dir)?;
+    if let Err(error) =
+        copy_system_settings_to_account_if_available(Path::new(&cfg.saved_games_path), &dir)
+    {
+        crate::logger::log_msg(
+            "WARN",
+            "Account",
+            &format!("创建账号时跳过可选 Settings.json 快照: {}", error),
+        );
+    }
 
     let mut meta = AccountMeta::new(&id);
     meta.display_name = nickname;
@@ -838,7 +869,15 @@ fn collect_account_snapshot_blocking(
     }
 
     // 2. 从全局存档配置路径复制真实 Settings.json
-    copy_system_settings_to_account(&cfg.saved_games_path, &account_dir)?;
+    if let Err(error) =
+        copy_system_settings_to_account_if_available(Path::new(&cfg.saved_games_path), &account_dir)
+    {
+        crate::logger::log_msg(
+            "WARN",
+            "Account",
+            &format!("初始化账号时跳过可选 Settings.json 快照: {}", error),
+        );
+    }
 
     // 3. 导出注册表
     let json_dst = account_dir.join("unified_auth.json");
@@ -881,6 +920,70 @@ fn cleanup_after_snapshot() -> Result<(), AppError> {
     kill_processes_by_name(&["Battle.net.exe", "Agent.exe"]);
     // 清空注册表
     clear_auth_registry()
+}
+
+#[cfg(test)]
+mod settings_json_tests {
+    use super::{copy_account_settings_to_system, copy_system_settings_to_account_if_available};
+    use std::path::PathBuf;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let unique = format!(
+            "d2rhub_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn missing_system_settings_is_optional_for_account_creation() {
+        let saved_games = temp_dir("missing_system_settings");
+        let account_dir = temp_dir("account_without_settings");
+
+        let copied =
+            copy_system_settings_to_account_if_available(&saved_games, &account_dir).unwrap();
+
+        assert!(!copied);
+        assert!(!account_dir.join("Settings.json").exists());
+        let _ = std::fs::remove_dir_all(saved_games);
+        let _ = std::fs::remove_dir_all(account_dir);
+    }
+
+    #[test]
+    fn existing_system_settings_is_copied_to_account() {
+        let saved_games = temp_dir("existing_system_settings");
+        let account_dir = temp_dir("account_with_settings");
+        std::fs::write(saved_games.join("Settings.json"), r#"{"VSync":1}"#).unwrap();
+
+        let copied =
+            copy_system_settings_to_account_if_available(&saved_games, &account_dir).unwrap();
+
+        assert!(copied);
+        assert_eq!(
+            std::fs::read_to_string(account_dir.join("Settings.json")).unwrap(),
+            r#"{"VSync":1}"#
+        );
+        let _ = std::fs::remove_dir_all(saved_games);
+        let _ = std::fs::remove_dir_all(account_dir);
+    }
+
+    #[test]
+    fn customized_settings_requires_an_account_settings_file() {
+        let saved_games = temp_dir("customized_settings_target");
+        let account_dir = temp_dir("customized_settings_source");
+
+        let error = copy_account_settings_to_system(&account_dir, &saved_games).unwrap_err();
+
+        assert!(error.to_string().contains("账号 Settings.json 不存在"));
+        let _ = std::fs::remove_dir_all(saved_games);
+        let _ = std::fs::remove_dir_all(account_dir);
+    }
 }
 
 /// 清空 UnifiedAuth 注册表键值（保留键本身）

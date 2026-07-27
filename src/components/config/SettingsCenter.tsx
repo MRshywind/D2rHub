@@ -71,10 +71,31 @@ export function SettingsCenter({ open, onClose, onReconfigure, initialTab, initi
 
   // Tab and search state
   const [activeTab, setActiveTab] = useState<TabType>("accounts");
+  const [settingsJsonAvailable, setSettingsJsonAvailable] = useState<boolean | null>(null);
 
   // Config backup for rollback
   const [originalConfig, setOriginalConfig] = useState<GlobalConfig | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!open || !config?.saved_games_path) {
+      setSettingsJsonAvailable(null);
+      return () => {
+        active = false;
+      };
+    }
+    invoke<boolean>("check_saved_games_settings", { path: config.saved_games_path })
+      .then((exists) => {
+        if (active) setSettingsJsonAvailable(exists);
+      })
+      .catch(() => {
+        if (active) setSettingsJsonAvailable(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, config?.saved_games_path]);
 
   // Game settings edit states (per account)
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
@@ -568,6 +589,15 @@ export function SettingsCenter({ open, onClose, onReconfigure, initialTab, initi
                       <Button size="sm" onClick={() => pickFolder("saved_games_path", "存档目录")}>浏览</Button>
                       <Button size="sm" onClick={() => applyDetectedPath("saved_games_path", detectedPaths.savedGames)}>自动探测</Button>
                     </div>
+                    {settingsJsonAvailable === false && (
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
+                        style={{ background: "var(--toast-warning-bg)", border: "1px solid var(--toast-warning-border)" }}>
+                        <ShieldAlert size={14} className="text-warning shrink-0 mt-0.5" />
+                        <p className="text-xs text-text-secondary leading-relaxed">
+                          未检测到 Settings.json。账号创建、登录和多开不受影响，但系统画质读取、账号独立画质配置与覆盖暂不可用。
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

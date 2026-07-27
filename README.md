@@ -18,7 +18,7 @@ D2RHub 是一款专为《暗黑破坏神 II：重制版》(D2R) 玩家精心设�
 ### ✨ 核心特色功能
 *   **🎮 本地多开管理**：一键清除游戏的多开限制。基于 Windows 标准进程句柄清理技术，不修改游戏文件，不注入内存或 DLL。
 *   **🚀 账号独立配置**：支持为每个账号绑定独立的战网 Token 实现自动排队登录，支持独立启动参数（Mod 启动）以及独立的单机存档目录。
-*   **⚙️ 图形化画质设置**：内置画质编辑器，支持一键切换画质预设（如小号极低画质、大号超高画质），降低多开时的硬件负载。
+*   **⚙️ 图形化画质设置**：内置画质编辑器，支持一键切换画质预设（如小号极低画质、大号超高画质），降低多开时的硬件负载。存档目录缺少 `Settings.json` 时，账号创建、登录和多开仍可正常使用，仅画质配置相关功能暂不可用。
 *   **📊 硬件负载监控**：实时监控 CPU、内存、GPU 及显存占用，多开时硬件状态一目了然。
 *   **🪟 迷你悬浮窗 (Overlay)**：可置顶悬浮在桌面上，方便双击切换并聚焦对应的游戏窗口。
 *   **⏱️ OCR 智能刷图统计**：通过实时 OCR 分析游戏画面，自动记录刷图时间、历史平均用时、总场次等统计数据。
@@ -64,7 +64,7 @@ D2RHub is a lightweight, player-friendly Windows utility designed for managing m
 ### ✨ Features
 *   **🎮 Local Multi-Instance Management**: Bypass the D2R single-instance restriction automatically. D2RHub uses native Windows handle closing APIs, with no memory injection, DLL injection, or game-file modification.
 *   **🚀 Configuration Isolation**: Bind different Battle.net accounts, custom launch arguments (Mod support), and **independent save directories** for each profile.
-*   **⚙️ Graphical Settings Editor**: Tweak D2R's `Settings.json` with a full GUI. Apply graphics presets instantly (e.g., Ultra settings for your main character, Minimum settings for alt accounts to save GPU/CPU resources).
+*   **⚙️ Graphical Settings Editor**: Tweak D2R's `Settings.json` with a full GUI. Apply graphics presets instantly (e.g., Ultra settings for your main character, Minimum settings for alt accounts to save GPU/CPU resources). If the save directory does not contain `Settings.json`, profile creation, login, and multiboxing remain available; only graphics configuration features are unavailable until the path or file is fixed.
 *   **📊 Hardware Load Monitor**: Real-time tracking of CPU, RAM, GPU, and Video Memory (VRAM) so you can monitor your computer's health while multi-boxing.
 *   **🪟 Desktop Overlay**: A compact, semi-transparent overlay shows on the edge of your screen when the manager is minimized, showing hardware stats and active account status.
 *   **⏱️ OCR Run Tracker**: Real-time OCR-based game screen analysis. Automatically records run timers, average times, and session run counts.

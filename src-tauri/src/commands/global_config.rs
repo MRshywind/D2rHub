@@ -138,19 +138,8 @@ fn file_name_eq(path: &Path, expected: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_writable_dir(path: &Path) -> Result<(), AppError> {
-    if path.join("Settings.json").is_file() {
-        return Ok(());
-    }
-
-    let probe = path.join(format!(
-        ".d2rhub_write_test_{}.tmp",
-        std::process::id()
-    ));
-    std::fs::write(&probe, b"")
-        .map_err(|e| AppError::ConfigWriteError(format!("存档目录不可写 {}: {}", path.display(), e)))?;
-    let _ = std::fs::remove_file(probe);
-    Ok(())
+fn saved_games_settings_exists(path: &Path) -> bool {
+    path.join("Settings.json").is_file()
 }
 
 fn validate_config_paths(config: &GlobalConfig) -> Result<(), AppError> {
@@ -163,15 +152,6 @@ fn validate_config_paths(config: &GlobalConfig) -> Result<(), AppError> {
     if !game_path.is_dir() {
         return Err(AppError::InvalidGamePath(config.game_path.clone()));
     }
-
-    let saved_games_path = Path::new(&config.saved_games_path);
-    if !saved_games_path.is_dir() {
-        return Err(AppError::ConfigWriteError(format!(
-            "存档目录无效: {}",
-            config.saved_games_path
-        )));
-    }
-    ensure_writable_dir(saved_games_path)?;
 
     if !config.browser_path.trim().is_empty() {
         let browser_path = Path::new(&config.browser_path);
@@ -200,6 +180,53 @@ fn validate_config_paths(config: &GlobalConfig) -> Result<(), AppError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod saved_games_validation_tests {
+    use super::{saved_games_settings_exists, validate_config_paths, GlobalConfig};
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let unique = format!(
+            "d2rhub_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn invalid_saved_games_path_does_not_block_core_configuration() {
+        let root = temp_dir("config_without_saved_games");
+        let battle_net = root.join("Battle.net.exe");
+        let game_dir = root.join("game");
+        std::fs::write(&battle_net, b"").unwrap();
+        std::fs::create_dir_all(&game_dir).unwrap();
+
+        let mut config = GlobalConfig::default();
+        config.battle_net_path = battle_net.to_string_lossy().to_string();
+        config.game_path = game_dir.to_string_lossy().to_string();
+        config.saved_games_path = root.join("missing").to_string_lossy().to_string();
+
+        assert!(validate_config_paths(&config).is_ok());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn settings_availability_requires_the_actual_file() {
+        let saved_games = temp_dir("settings_availability");
+        assert!(!saved_games_settings_exists(&saved_games));
+
+        std::fs::write(saved_games.join("Settings.json"), b"{}").unwrap();
+
+        assert!(saved_games_settings_exists(&saved_games));
+        let _ = std::fs::remove_dir_all(saved_games);
+    }
 }
 
 /// 窗口几何信息（位置+尺寸持久化）
@@ -488,6 +515,11 @@ pub fn save_global_config(
     update_shortcut_map(&state, &cfg);
     crate::input_listener::set_bongo_cat_input_enabled(cfg.enable_bongo_cat);
     Ok(())
+}
+
+#[tauri::command]
+pub fn check_saved_games_settings(path: String) -> bool {
+    saved_games_settings_exists(Path::new(&path))
 }
 
 /// 保存窗口几何信息（位置+尺寸）

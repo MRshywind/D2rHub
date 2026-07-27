@@ -318,6 +318,8 @@ function installIpcMock() {
       case "check_path_exists":
       case "check_bnet_logged_in":
         return true;
+      case "check_saved_games_settings":
+        return false;
       case "get_app_version":
         return "0.7.2";
       case "check_cloud_version":

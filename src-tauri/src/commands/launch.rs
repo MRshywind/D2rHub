@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
-use crate::commands::account::AccountManager;
+use crate::commands::account::{copy_account_settings_to_system, AccountManager};
 use crate::commands::system::LaunchProgress;
 use crate::commands::utils::silent_cmd;
 use crate::error::AppError;
@@ -358,21 +358,8 @@ async fn prepare_bnet_environment(
             .map(|meta| meta.has_customized_settings)
             .unwrap_or(false)
         {
-            let src = account_dir.join("Settings.json");
-            let dst = Path::new(&saved_games_path).join("Settings.json");
-            if src.exists() {
-                if let Some(parent) = dst.parent() {
-                    if !parent.exists() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                }
-                if dst.exists() {
-                    let _ = std::fs::remove_file(&dst);
-                }
-                if let Err(e) = std::fs::copy(&src, &dst) {
-                    return Err(format!("复制 Settings.json 失败: {}", e));
-                }
-            }
+            copy_account_settings_to_system(&account_dir, Path::new(&saved_games_path))
+                .map_err(|e| e.to_string())?;
         } else {
             crate::logger::log_msg(
                 "INFO",
@@ -1281,13 +1268,16 @@ async fn launch_single_token(
 
     // 1. 覆盖 Settings.json
     if meta.has_customized_settings {
-        let src = account_dir.join("Settings.json");
-        let dst = std::path::Path::new(&saved_games_path).join("Settings.json");
-        if src.exists() {
-            if let Some(parent) = dst.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::copy(&src, &dst);
+        if let Err(e) =
+            copy_account_settings_to_system(&account_dir, Path::new(&saved_games_path))
+        {
+            return LaunchResult {
+                account_id: account_id.to_string(),
+                success: false,
+                d2r_pid: None,
+                error: Some(e.to_string()),
+                mutex_killed: false,
+            };
         }
     } else {
         crate::logger::log_msg(
