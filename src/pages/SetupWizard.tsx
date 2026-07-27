@@ -32,6 +32,7 @@ export function SetupWizard({ onComplete, initialConfig }: Props) {
   const [currentStep, setCurrentStep] = useState(0);
   const [showError, setShowError] = useState(false);
   const [isCurrentStepValid, setIsCurrentStepValid] = useState(false);
+  const [settingsJsonAvailable, setSettingsJsonAvailable] = useState<boolean | null>(null);
 
   const handleSelectBrowser = async (btype: "chrome" | "edge") => {
     try {
@@ -144,6 +145,26 @@ export function SetupWizard({ onComplete, initialConfig }: Props) {
 
   useEffect(() => {
     let active = true;
+    if (!config.saved_games_path) {
+      setSettingsJsonAvailable(null);
+      return () => {
+        active = false;
+      };
+    }
+    invoke<boolean>("check_saved_games_settings", { path: config.saved_games_path })
+      .then((exists) => {
+        if (active) setSettingsJsonAvailable(exists);
+      })
+      .catch(() => {
+        if (active) setSettingsJsonAvailable(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [config.saved_games_path]);
+
+  useEffect(() => {
+    let active = true;
     const checkStepValidity = async () => {
       const step = steps[currentStep];
       if (!step) return;
@@ -156,6 +177,11 @@ export function SetupWizard({ onComplete, initialConfig }: Props) {
 
       if (!step.value) {
         if (active) setIsCurrentStepValid(false);
+        return;
+      }
+
+      if (step.key === "saved_games_path") {
+        if (active) setIsCurrentStepValid(true);
         return;
       }
 
@@ -284,6 +310,16 @@ export function SetupWizard({ onComplete, initialConfig }: Props) {
             <p className="text-sm text-success mt-3 flex items-center gap-1.5">
               <Check size={11}/> 已自动检测到
             </p>
+          )}
+
+          {current.key === "saved_games_path" && settingsJsonAvailable === false && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-card mt-3"
+              style={{ background: "var(--toast-warning-bg)", border: "1px solid var(--toast-warning-border)" }}>
+              <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
+              <p className="text-xs text-text-secondary leading-relaxed">
+                当前目录中未找到 Settings.json。账号创建、登录和多开不受影响，但画质配置相关功能暂不可用。请先启动一次游戏生成该文件，或稍后在设置中修正存档目录。
+              </p>
+            </div>
           )}
 
           {current.key === "browser_path" && (
