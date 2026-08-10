@@ -15,4 +15,15 @@ require.extensions[".ts"] = function loadTs(module, filename) {
   module._compile(output.outputText, filename);
 };
 
-require(path.join(__dirname, "..", "src", "utils", "shortcut.test.ts"));
+function findTests(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return findTests(fullPath);
+    return entry.name.endsWith(".test.ts") ? [fullPath] : [];
+  });
+}
+
+const sourceDirectory = path.join(__dirname, "..", "src");
+for (const testFile of findTests(sourceDirectory).sort()) {
+  require(testFile);
+}

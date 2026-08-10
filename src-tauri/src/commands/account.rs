@@ -589,19 +589,46 @@ pub fn update_account_meta(
 /// 删除账号
 #[tauri::command]
 pub fn delete_account(
+    app: tauri::AppHandle,
     state: tauri::State<'_, SharedState>,
     account_id: String,
 ) -> Result<(), AppError> {
-    let config = state.config.read();
-    let cfg = config
-        .as_ref()
-        .ok_or_else(|| AppError::ConfigReadError("尚未完成首次配置".to_string()))?;
+    let accounts_dir = {
+        let config = state.config.read();
+        config
+            .as_ref()
+            .ok_or_else(|| AppError::ConfigReadError("尚未完成首次配置".to_string()))?
+            .accounts_dir
+            .clone()
+    };
 
-    let dir = AccountManager::account_dir_checked(&cfg.accounts_dir, &account_id)?;
+    let dir = AccountManager::account_dir_checked(&accounts_dir, &account_id)?;
     if !dir.exists() {
         return Err(AppError::AccountNotFound(account_id));
     }
     std::fs::remove_dir_all(&dir)?;
+
+    let updated_config = {
+        let mut config = state.config.write();
+        let cfg = config
+            .as_mut()
+            .ok_or_else(|| AppError::ConfigReadError("尚未完成首次配置".to_string()))?;
+        if cfg.ocr_target_account.trim() == account_id {
+            cfg.ocr_enabled = false;
+            cfg.ocr_target_account.clear();
+            cfg.save(&state.app_data_dir)?;
+            Some(cfg.clone())
+        } else {
+            None
+        }
+    };
+
+    if let Some(config) = updated_config {
+        #[cfg(feature = "ocr")]
+        crate::ocr::stop_ocr_monitor();
+        let _ = app.emit("global-config-updated", config);
+    }
+
     Ok(())
 }
 
