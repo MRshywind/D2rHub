@@ -196,6 +196,17 @@ unsafe fn try_handle_shortcut(kbd: &KBDLLHOOKSTRUCT) -> bool {
     let alt = GetKeyState(0x12) < 0;
     let shift = GetKeyState(0x10) < 0;
     let key_name = vk_to_key_string(vk);
+
+    // 检测 Ctrl+Shift+P：暂停/恢复 OCR 计时
+    if ctrl && shift && vk == 0x50 { // 0x50 = 'P'
+        if let Ok(guard) = APP_HANDLE.try_lock() {
+            if let Some(app) = &*guard {
+                let _ = app.emit("ocr-toggle-pause", ());
+            }
+        }
+        return true; // 吞掉按键
+    }
+
     let combo = build_shortcut_string(ctrl, alt, shift, &key_name);
 
     // Read from cached shortcut memory map (non-blocking: skip if lock held)
@@ -274,6 +285,15 @@ unsafe extern "system" fn keyboard_hook_proc(code: std::os::raw::c_int, wparam: 
             let kbd = &*(lparam as *const KBDLLHOOKSTRUCT);
             // 仅处理按下事件（非抬起），flags bit 7 (LLKHF_UP) = 0 表示按下
             if (kbd.flags & 0x80) == 0 {
+                // ESC 键检测：触发菜单识别
+                if kbd.vk_code == 0x1B {
+                    if let Ok(guard) = APP_HANDLE.try_lock() {
+                        if let Some(app) = &*guard {
+                            let _ = app.emit("esc-pressed", ());
+                        }
+                    }
+                }
+
                 if try_handle_shortcut(kbd) {
                     // 快捷键已处理，吞掉该按键，不传递给其他应用
                     return 1;

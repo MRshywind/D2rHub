@@ -385,6 +385,8 @@ pub fn run() {
             #[cfg(feature = "ocr")] ocr::stop_ocr_monitor,
             #[cfg(feature = "ocr")] ocr::get_ocr_ch_a_results,
             #[cfg(feature = "ocr")] ocr::get_ocr_ch_b_results,
+            #[cfg(feature = "ocr")] ocr::get_all_scene_names,
+            #[cfg(feature = "ocr")] ocr::enable_menu_detection,
             // ── 数据统计 ──
             #[cfg(feature = "ocr")] stats::save_scene_record,
             #[cfg(feature = "ocr")] stats::get_stats_data,

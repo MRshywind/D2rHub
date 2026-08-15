@@ -72,6 +72,21 @@ export interface DropEntry {
   screenshotPath: string | null;  // 仅 #24+ 有值
 }
 
+/// 主城名称列表（硬编码备份，与 Rust 端 MAIN_CITY_NAME_SET 保持一致）
+const MAIN_CITY_NAMES: Set<string> = new Set([
+  "侠盗营地", "哈洛加斯", "库拉斯特海港", "库拉斯特港口",
+  "流亡者营地", "混沌界要塞", "混沌要塞", "群魔堡垒", "萝格营地", "鲁高因",
+]);
+
+/// 菜单界面名称（用于 end 回退）
+const MENU_STATE_NAMES: Set<string> = new Set(["角色选择界面", "游戏大厅"]);
+
+interface PhaseConfig {
+  start: string[];
+  middle: string[];
+  end: string[];
+}
+
 interface StatsState {
   // ── 当前场景 ──
   currentScene: string;
@@ -81,6 +96,15 @@ interface StatsState {
   isTiming: boolean;
   timerStart: number | null;
   elapsedMs: number;
+
+  // ── 暂停 ──
+  isPaused: boolean;
+  pausedAtMs: number;
+
+  // ── 计时模式 ──
+  timingMode: "full_clear" | "single_scene" | "start_middle_end";
+  phaseConfig: PhaseConfig;
+  targetReached: boolean;
 
   // ── 数据库历史平均耗时和总场次（当前场景）──
   dbAvgTime: number | null;
@@ -102,7 +126,11 @@ interface StatsState {
   startTimer: () => void;
   stopTimerAndSave: () => Promise<void>;
   tick: () => void;
-  processOcrSceneText: (item: { text: string; is_town?: boolean }) => Promise<void>;
+  pauseTimer: () => void;
+  resumeTimer: () => void;
+  stopTimer: () => Promise<void>;
+  loadTimingConfig: (cfg?: { ocr_timing_mode?: string; ocr_phase_config_json?: string }) => void;
+  processOcrSceneText: (item: { text: string; is_town?: boolean; is_menu?: boolean }) => Promise<void>;
   /// 处理通道B 的 OCR 掉落结果（接收预匹配的符文数据）
   processOcrDrop: (item: {
     text: string;
@@ -120,6 +148,11 @@ export const useStats = create<StatsState>((set, get) => ({
   isTiming: false,
   timerStart: null,
   elapsedMs: 0,
+  isPaused: false,
+  pausedAtMs: 0,
+  timingMode: "full_clear",
+  phaseConfig: { start: [], middle: [], end: [] },
+  targetReached: false,
   dbAvgTime: null,
   dbTotalRuns: null,
   sessionRuns: {},
@@ -182,9 +215,48 @@ export const useStats = create<StatsState>((set, get) => ({
   },
 
   tick: () => {
-    const { isTiming, timerStart } = get();
-    if (!isTiming || !timerStart) return;
+    const { isTiming, isPaused, timerStart } = get();
+    if (!isTiming || !timerStart || isPaused) return;
     set({ elapsedMs: Date.now() - timerStart });
+  },
+
+  pauseTimer: () => {
+    const { isTiming, elapsedMs } = get();
+    if (!isTiming) return;
+    set({ isPaused: true, pausedAtMs: elapsedMs });
+  },
+
+  resumeTimer: () => {
+    const { isPaused, pausedAtMs } = get();
+    if (!isPaused) return;
+    set({
+      isPaused: false,
+      timerStart: Date.now() - pausedAtMs,
+    });
+  },
+
+  stopTimer: async () => {
+    await get().stopTimerAndSave();
+    set({ isPaused: false, pausedAtMs: 0, targetReached: false });
+  },
+
+  loadTimingConfig: (cfg?: { ocr_timing_mode?: string; ocr_phase_config_json?: string }) => {
+    if (!cfg) return;
+    const mode = (cfg.ocr_timing_mode || "full_clear") as StatsState["timingMode"];
+    let phaseConfig: PhaseConfig = { start: [], middle: [], end: [] };
+    if (cfg.ocr_phase_config_json) {
+      try {
+        const parsed = JSON.parse(cfg.ocr_phase_config_json);
+        if (parsed && typeof parsed === "object") {
+          phaseConfig = {
+            start: Array.isArray(parsed.start) ? parsed.start : [],
+            middle: Array.isArray(parsed.middle) ? parsed.middle : [],
+            end: Array.isArray(parsed.end) ? parsed.end : [],
+          };
+        }
+      } catch { /* keep defaults */ }
+    }
+    set({ timingMode: mode, phaseConfig });
   },
 
   fetchDbStats: async (sceneName: string) => {
@@ -217,31 +289,109 @@ export const useStats = create<StatsState>((set, get) => ({
     normalized = normalized.replace(/^进入\s*/, "").trim();
     if (!normalized) return;
 
-    const { isTiming, currentScene } = get();
+    const { isTiming, timingMode, phaseConfig } = get();
     const isTown = item.is_town || false;
+    const isMenu = item.is_menu || false;
 
-    if (isTown) {
-      // 回城：先保存当前战斗场景的记录（此时 currentScene 仍是战斗场景名）
-      if (isTiming) {
-        await get().stopTimerAndSave();
-      }
-      set({ currentScene: normalized, lastCombatScene: "", dbAvgTime: null, dbTotalRuns: null });
-    } else {
-      // 战斗场景
-      if (isTiming) {
-        if (normalized !== currentScene) {
-          // 场景切换：保存旧场景 → 开始新场景
+    // ── 辅助函数 ──
+    const isStartZone = (name: string): boolean => {
+      if (phaseConfig.start.length > 0) return phaseConfig.start.includes(name);
+      return MAIN_CITY_NAMES.has(name);
+    };
+    const isMiddleZone = (name: string): boolean => {
+      if (phaseConfig.middle.length > 0) return phaseConfig.middle.includes(name);
+      return false;
+    };
+    const isEndZone = (name: string): boolean => {
+      if (phaseConfig.end.length > 0) return phaseConfig.end.includes(name);
+      return MAIN_CITY_NAMES.has(name) || MENU_STATE_NAMES.has(name);
+    };
+
+    if (timingMode === "full_clear") {
+      // ── 通刷模式（现有逻辑不变）──
+      if (isTown) {
+        if (isTiming) {
           await get().stopTimerAndSave();
+        }
+        set({ currentScene: normalized, lastCombatScene: "", dbAvgTime: null, dbTotalRuns: null });
+      } else {
+        if (isTiming) {
+          if (normalized !== get().currentScene) {
+            await get().stopTimerAndSave();
+            set({ currentScene: normalized, lastCombatScene: normalized });
+            get().startTimer();
+            get().fetchDbStats(normalized);
+          }
+        } else {
           set({ currentScene: normalized, lastCombatScene: normalized });
           get().startTimer();
           get().fetchDbStats(normalized);
         }
-        // 场景没变，继续计时
+      }
+    } else if (timingMode === "single_scene") {
+      // ── 单场景模式：主城→目标场景→主城/菜单为一轮 ──
+      if (isTown || isMenu) {
+        if (isTiming) {
+          // 保存时使用 lastCombatScene（最后一个战斗场景名）
+          const sceneToSave = get().lastCombatScene || normalized;
+          // 临时替换 currentScene 以保存正确的场景名
+          const prev = get().currentScene;
+          set({ currentScene: sceneToSave });
+          await get().stopTimerAndSave();
+          set({ currentScene: prev });
+          set({ targetReached: false });
+        }
+        set({ currentScene: normalized, lastCombatScene: "", dbAvgTime: null, dbTotalRuns: null });
       } else {
-        // 从城镇/初始进入战斗
-        set({ currentScene: normalized, lastCombatScene: normalized });
-        get().startTimer();
+        // 战斗场景
+        if (isTiming) {
+          // 检查是否为中间标记场景
+          if (isMiddleZone(normalized)) {
+            set({ targetReached: true });
+          }
+          // 更新场景名但不重新计时，继续累计
+          set({ currentScene: normalized, lastCombatScene: normalized });
+        } else {
+          // 离开主城/菜单 → 开始计时
+          set({ currentScene: normalized, lastCombatScene: normalized });
+          get().startTimer();
+          get().fetchDbStats(normalized);
+        }
+      }
+    } else if (timingMode === "start_middle_end") {
+      // ── 阶段标记模式：自定义 start/middle/end ──
+      if (isEndZone(normalized)) {
+        if (isTiming) {
+          const sceneToSave = get().lastCombatScene || normalized;
+          const prev = get().currentScene;
+          set({ currentScene: sceneToSave });
+          await get().stopTimerAndSave();
+          set({ currentScene: prev });
+          set({ targetReached: false });
+        }
+        set({ currentScene: normalized, lastCombatScene: "", dbAvgTime: null, dbTotalRuns: null });
+      } else if (isMiddleZone(normalized)) {
+        if (!isTiming) {
+          get().startTimer();
+        }
+        set({ targetReached: true, currentScene: normalized, lastCombatScene: normalized });
         get().fetchDbStats(normalized);
+      } else if (isStartZone(normalized)) {
+        if (isTiming) {
+          // 意外提前回到起点 → 结束
+          await get().stopTimerAndSave();
+          set({ targetReached: false });
+        }
+        set({ currentScene: normalized, lastCombatScene: "", dbAvgTime: null, dbTotalRuns: null });
+      } else {
+        // 其他战斗场景
+        if (isTiming) {
+          set({ currentScene: normalized, lastCombatScene: normalized });
+        } else {
+          set({ currentScene: normalized, lastCombatScene: normalized });
+          get().startTimer();
+          get().fetchDbStats(normalized);
+        }
       }
     }
   },

@@ -92,6 +92,11 @@ pub fn rune_clean_text(text: &str) -> String {
         clean_text = clean_text.replace(w, "");
     }
 
+    // 剥离宝石关键词（安全网：避免残留的宝石相关中文字符干扰模糊匹配）
+    for &kw in game_data::GEM_KEYWORDS.iter() {
+        clean_text = clean_text.replace(kw, "");
+    }
+
     clean_text.replace("符文", "")
 }
 
@@ -225,23 +230,32 @@ pub fn rune_match(raw_text: &str, threshold: u8, debug_out_dir: Option<&Path>) -
 
     // ── 4. 数字回退 (1-33) ──
     // 仅在 cleaned_cn 非空（确有中文文本）且无任何文本匹配时才启用，
-    // 避免纯噪点数字（如 OCR 碎片中的 "4"）误匹配
+    // 避免纯噪点数字（如 OCR 碎片中的 "4"）误匹配。
+    // 增加宝石上下文守卫：排除 MOD 宝石提示（如"无暇的紫宝石[合成30]"）中的数字。
     if best_name.is_none() && !cleaned_cn.is_empty() {
-        for part in raw_text.split(|c: char| !c.is_ascii_digit()) {
-            if let Ok(n) = part.parse::<u32>() {
-                if let Some(name) = game_data::rune_name_from_number(n) {
-                    // 数字匹配视为较高置信度 (0.85)，但低于精确文本匹配
-                    let score = 0.85;
-                    if score > best_score {
-                        best_score = score;
-                        best_name = Some(name.to_string());
+        let has_gem_context = game_data::GEM_KEYWORDS.iter()
+            .any(|kw| raw_text.to_lowercase().contains(kw))
+            || raw_text.contains('[');  // "[合成30]" 方括号是宝石/装备标记，符文掉落无此格式
+
+        if !has_gem_context {
+            for part in raw_text.split(|c: char| !c.is_ascii_digit()) {
+                if let Ok(n) = part.parse::<u32>() {
+                    if let Some(name) = game_data::rune_name_from_number(n) {
+                        // 数字匹配视为较高置信度 (0.85)，但低于精确文本匹配
+                        let score = 0.85;
+                        if score > best_score {
+                            best_score = score;
+                            best_name = Some(name.to_string());
+                        }
+                        if let Some(dir) = debug_out_dir {
+                            debug_rune_log(dir, &format!("[RuneMatch] 层级4(数字) 命中: {} -> {} (score=0.85)", n, name));
+                        }
+                        break;
                     }
-                    if let Some(dir) = debug_out_dir {
-                        debug_rune_log(dir, &format!("[RuneMatch] 层级4(数字) 命中: {} -> {} (score=0.85)", n, name));
-                    }
-                    break;
                 }
             }
+        } else if let Some(dir) = debug_out_dir {
+            debug_rune_log(dir, "[RuneMatch] 跳过数字回退: 文本含宝石关键词或方括号标记");
         }
     }
 
@@ -265,5 +279,40 @@ pub fn rune_match(raw_text: &str, threshold: u8, debug_out_dir: Option<&Path>) -
         best_name.map(|n| (n, best_score))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gem_text_not_matched() {
+        // "无暇的紫宝石[合成30]" 不应该被误识别为符文 #30
+        assert!(rune_match("无暇的紫宝石[合成30]", 67, None).is_none());
+        assert!(rune_match("无暇的紫宝石", 67, None).is_none());
+        assert!(rune_match("碎裂的钻石", 67, None).is_none());
+        assert!(rune_match("完美的骷髅", 67, None).is_none());
+        // 无瑕（异体字）+ 合成数字
+        assert!(rune_match("无瑕的紫宝石合成30", 67, None).is_none());
+    }
+
+    #[test]
+    fn test_real_rune_still_matched() {
+        // 确保正常符文识别不受宝石关键词影响
+        assert!(rune_match("贝", 67, None).is_some());
+        assert!(rune_match("乔", 67, None).is_some());
+        assert!(rune_match("伊斯特", 67, None).is_some());
+        assert!(rune_match("萨德", 67, None).is_some());
+    }
+
+    #[test]
+    fn test_gem_keywords_stripped_in_clean() {
+        // rune_clean_text 应剥离宝石关键词
+        let cleaned = rune_clean_text("无暇的紫宝石");
+        // 剥离后不应包含"无暇""紫宝石"等词，也没有符文名残留
+        assert!(!cleaned.contains("无暇"));
+        assert!(!cleaned.contains("紫宝石"));
+        assert!(!cleaned.contains("宝石"));
     }
 }

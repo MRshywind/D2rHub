@@ -2,6 +2,7 @@ use crate::ocr::capturer::Capturer;
 use crate::ocr::engine;
 use crate::ocr::preprocess;
 use crate::ocr::fuzzy;
+use crate::ocr::game_data;
 use crate::ocr::{OcrConfig, OcrTextItem};
 use crate::rune_data;
 use std::path::Path;
@@ -32,6 +33,12 @@ pub struct OcrMonitor {
     last_frame_hash: u64,
     frozen_count: u32,
     active_drop: Option<ActiveDrop>,
+    /// 菜单检测状态（ESC 触发后才启用）
+    menu_detection_active: bool,
+    /// 上次识别到的菜单界面名（去重用）
+    last_menu_result: Option<String>,
+    /// 菜单检测静默轮询计数（超时自动关闭）
+    menu_silent_polls: u32,
 }
 
 impl OcrMonitor {
@@ -66,7 +73,17 @@ impl OcrMonitor {
             last_frame_hash: 0,
             frozen_count: 0,
             active_drop: None,
+            menu_detection_active: false,
+            last_menu_result: None,
+            menu_silent_polls: 0,
         })
+    }
+
+    /// 启用菜单检测模式（ESC 触发），每轮 poll 额外检测右上角菜单文字
+    pub fn enable_menu_detection(&mut self) {
+        self.menu_detection_active = true;
+        self.last_menu_result = None;
+        self.menu_silent_polls = 0;
     }
 
     pub fn poll(&mut self) {
@@ -188,6 +205,10 @@ impl OcrMonitor {
                         // Clear Channel B deduplication state immediately on scene switch!
                         self.active_drop = None;
 
+                        // 取消菜单检测：用户 ESC 取消了，回到游戏中
+                        self.menu_detection_active = false;
+                        self.menu_silent_polls = 0;
+
                         let is_town = crate::ocr::game_data::MAIN_CITY_NAME_SET.contains(matched.as_str());
                         super::push_result(
                             &super::CH_A_RESULTS,
@@ -209,6 +230,97 @@ impl OcrMonitor {
                         let raw_texts: Vec<&str> = results.iter().map(|b| b.text.as_str()).collect();
                         let _ = writeln!(f, "[Channel A] ❌ 无匹配 (matching_pixels={}) OCR输出: {:?}", scene_matching_pixels, raw_texts);
                     }
+                }
+            }
+        }
+
+        // --- 菜单检测（ESC 触发，右上角 ROI OCR）---
+        if self.menu_detection_active {
+            // 菜单 ROI: 屏幕右上角区域 (55%-95% 宽, 0%-12% 高)
+            let menu_x = (fw as f32 * 0.55) as u32;
+            let menu_y = 0u32;
+            let menu_w = (fw as f32 * 0.40) as u32;
+            let menu_h = (fh as f32 * 0.12) as u32;
+
+            if menu_w > 20 && menu_h > 10 {
+                let roi_size = (menu_w * menu_h * 4) as usize;
+                self.buffers.roi_a_raw.resize(roi_size, 0);
+
+                // 提取 ROI RGBA 像素 + 灰度方差检查
+                let mut gray_sum: u64 = 0;
+                let mut gray_sq_sum: u64 = 0;
+                let mut pixel_count: u64 = 0;
+                for y in menu_y..menu_y + menu_h {
+                    for x in menu_x..menu_x + menu_w {
+                        let src_idx = (y * fw + x) as usize * 4;
+                        let dst_idx = ((y - menu_y) * menu_w + (x - menu_x)) as usize * 4;
+                        if src_idx + 3 < self.buffers.frame.len() && dst_idx + 3 < roi_size {
+                            let r = self.buffers.frame[src_idx];
+                            let g = self.buffers.frame[src_idx + 1];
+                            let b = self.buffers.frame[src_idx + 2];
+                            self.buffers.roi_a_raw[dst_idx] = r;
+                            self.buffers.roi_a_raw[dst_idx + 1] = g;
+                            self.buffers.roi_a_raw[dst_idx + 2] = b;
+                            self.buffers.roi_a_raw[dst_idx + 3] = self.buffers.frame[src_idx + 3];
+                            let gray = (r as u64 + g as u64 + b as u64) / 3;
+                            gray_sum += gray;
+                            gray_sq_sum += gray * gray;
+                            pixel_count += 1;
+                        }
+                    }
+                }
+
+                // 灰度方差检查：菜单区域有文字时方差较大，纯黑背景时方差小
+                let has_content = if pixel_count > 100 {
+                    let mean = gray_sum / pixel_count;
+                    let variance = gray_sq_sum / pixel_count - mean * mean;
+                    variance > 50 // 经验阈值
+                } else {
+                    false
+                };
+
+                if has_content {
+                    if let Ok(results) = engine::recognize_rgba(&self.buffers.roi_a_raw, menu_w, menu_h, None) {
+                        for block in results {
+                            let text = &block.text;
+                            // 遍历 MENU_KEYWORD_MAP 查找匹配
+                            for (keyword, state_name) in game_data::MENU_KEYWORD_MAP.iter() {
+                                if text.contains(keyword) {
+                                    let matched_name = state_name.to_string();
+                                    let is_new = self.last_menu_result.as_ref() != Some(&matched_name);
+                                    if is_new {
+                                        self.last_menu_result = Some(matched_name.clone());
+                                        self.menu_detection_active = false;
+                                        self.menu_silent_polls = 0;
+                                        super::push_result(
+                                            &super::CH_A_RESULTS,
+                                            OcrTextItem {
+                                                text: matched_name,
+                                                source: "channel_a".into(),
+                                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                                rune_number: None,
+                                                screenshot_path: None,
+                                                is_town: false,
+                                                is_menu: true,
+                                                rune_name_en: None,
+                                            },
+                                        );
+                                    }
+                                    break;
+                                }
+                            }
+                            if !self.menu_detection_active { break; }
+                        }
+                    }
+                }
+            }
+
+            // 超时保护：30 秒无结果自动关闭
+            if self.menu_detection_active {
+                self.menu_silent_polls += 1;
+                if self.menu_silent_polls > 60 {
+                    self.menu_detection_active = false;
+                    self.menu_silent_polls = 0;
                 }
             }
         }

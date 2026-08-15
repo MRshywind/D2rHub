@@ -88,6 +88,15 @@ pub struct GlobalConfig {
     /// 模式2: bnet_count 阈值, 4/5/7, 默认 5
     #[serde(default = "default_agent_threshold")]
     pub agent_threshold: u32,
+    /// OCR 计时模式: "full_clear" | "single_scene" | "start_middle_end"
+    #[serde(default = "default_ocr_timing_mode")]
+    pub ocr_timing_mode: String,
+    /// OCR 阶段标记配置 JSON: {"start":[],"middle":[],"end":[]}
+    #[serde(default = "default_ocr_phase_config_json")]
+    pub ocr_phase_config_json: String,
+    /// OCR 切屏自动暂停
+    #[serde(default)]
+    pub ocr_auto_pause_on_switch: bool,
 }
 
 fn default_font_scale() -> String { "default".to_string() }
@@ -99,6 +108,9 @@ fn default_ocr_poll_interval() -> u64 { 500 }
 fn default_agent_mode() -> u8 { 1 }
 fn default_agent_delay_secs() -> f64 { 1.0 }
 fn default_agent_threshold() -> u32 { 5 }
+
+fn default_ocr_timing_mode() -> String { "full_clear".to_string() }
+fn default_ocr_phase_config_json() -> String { "{}".to_string() }
 
 fn default_theme() -> String {
     "light".to_string()
@@ -276,6 +288,9 @@ impl Default for GlobalConfig {
             agent_mode: 1,
             agent_delay_secs: 1.0,
             agent_threshold: 5,
+            ocr_timing_mode: "full_clear".to_string(),
+            ocr_phase_config_json: "{}".to_string(),
+            ocr_auto_pause_on_switch: false,
         }
     }
 }

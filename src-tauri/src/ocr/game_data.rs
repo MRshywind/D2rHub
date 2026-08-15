@@ -522,6 +522,41 @@ pub static RUNE_UNUSEFUL_WORD: LazyLock<HashSet<&'static str>> = LazyLock::new(|
     HashSet::from([
         "出货",
         "恭喜出货",
+        // 宝石/非符文关键词 — 防止 MOD 宝石提示（如"无暇的紫宝石[合成30]"）被误识别为符文
+        "宝石",
+        "无暇",
+        "无瑕",
+        "完美",
+        "碎裂",
+        "裂开",
+        "无瑕疵",
+        "紫宝石",
+        "红宝石",
+        "蓝宝石",
+        "绿宝石",
+        "钻石",
+        "黄宝石",
+        "骷髅",
+    ])
+});
+
+/// 宝石相关关键词（用于数字回退守卫和符文清洗剥离，与 RUNE_UNUSEFUL_WORD 宝石条目保持一致）
+pub static GEM_KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    HashSet::from([
+        "宝石",
+        "无暇",
+        "无瑕",
+        "完美",
+        "碎裂",
+        "裂开",
+        "无瑕疵",
+        "紫宝石",
+        "红宝石",
+        "蓝宝石",
+        "绿宝石",
+        "钻石",
+        "黄宝石",
+        "骷髅",
     ])
 });
 
@@ -600,6 +635,30 @@ pub fn keep_only_ascii_letters(text: &str) -> String {
 pub fn fix_rune_name(text: &str) -> &str {
     RUNE_NAME_TRANS_MAPPING.get(text).copied().unwrap_or(text)
 }
+
+// ============================================================
+// 5. 菜单界面识别
+// ============================================================
+
+/// 菜单关键词 → 标准界面名（简繁覆盖）
+pub static MENU_KEYWORD_MAP: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    vec![
+        // 角色选择界面
+        ("线上", "角色选择界面"),
+        ("离线", "角色选择界面"),
+        ("線上", "角色选择界面"),
+        ("離線", "角色选择界面"),
+        // 游戏大厅
+        ("创建游戏", "游戏大厅"),
+        ("加入", "游戏大厅"),
+        ("天梯", "游戏大厅"),
+        ("創建遊戲", "游戏大厅"),
+        ("加入遊戲", "游戏大厅"),
+    ]
+});
+
+/// 菜单界面标准名称（供 config 和 get_all_scene_names 使用）
+pub static MENU_STATE_NAMES: &[&str] = &["角色选择界面", "游戏大厅"];
 
 #[cfg(test)]
 mod tests {

@@ -36,6 +36,12 @@ export interface GlobalConfig {
   agent_mode?: number;
   agent_delay_secs?: number;
   agent_threshold?: number;
+  /// OCR 计时模式: "full_clear" | "single_scene" | "start_middle_end"
+  ocr_timing_mode?: string;
+  /// OCR 阶段标记配置 JSON: {"start":[],"middle":[],"end":[]}
+  ocr_phase_config_json?: string;
+  /// OCR 切屏自动暂停
+  ocr_auto_pause_on_switch?: boolean;
 }
 
 // ── 数据统计 ──

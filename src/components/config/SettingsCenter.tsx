@@ -1245,6 +1245,41 @@ export function SettingsCenter({ open, onClose, onReconfigure, initialTab, initi
                         />
                       </div>
 
+                      {/* 计时模式 */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-semibold text-text-secondary">计时模式</span>
+                          <p className="text-2xs text-text-muted">通刷每场景独立计时；单场景从主城到主城计一轮；阶段标记自定义起止点</p>
+                        </div>
+                        <select
+                          value={config.ocr_timing_mode || "full_clear"}
+                          onChange={e => updateConfig(c => { c.ocr_timing_mode = e.target.value; })}
+                          className="h-8 px-2.5 rounded-lg bg-surface-hover border border-border-default text-text-primary text-xs"
+                        >
+                          <option value="full_clear">通刷模式</option>
+                          <option value="single_scene">单场景模式</option>
+                          <option value="start_middle_end">阶段标记</option>
+                        </select>
+                      </div>
+
+                      {/* 切屏自动暂停 */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-semibold text-text-secondary">切屏自动暂停计时</span>
+                          <p className="text-2xs text-text-muted">切换窗口时自动暂停计时器，切回游戏自动恢复</p>
+                        </div>
+                        <Toggle
+                          checked={!!config.ocr_auto_pause_on_switch}
+                          onChange={v => updateConfig(c => { c.ocr_auto_pause_on_switch = v; })}
+                        />
+                      </div>
+
+                      {/* 快捷键提示 */}
+                      <div className="text-2xs text-text-muted space-y-0.5 pt-1">
+                        <p><kbd className="px-1 py-0.5 rounded bg-surface/50 text-[10px] font-mono">Ctrl+Shift+P</kbd> 暂停/恢复计时</p>
+                        <p>按下 <kbd className="px-1 py-0.5 rounded bg-surface/50 text-[10px] font-mono">ESC</kbd> 退出到主界面时自动结束本轮</p>
+                      </div>
+
                       {/* Restart OCR button */}
                       <div className="border-t border-border-default/50 pt-3">
                         <button

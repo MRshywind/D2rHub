@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useRef } from "react";
-import { ChevronDown, ChevronUp, Eye } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, Pause, Play, Square } from "lucide-react";
 import { useAccounts } from "../store/accounts";
 import { useTheme, syncThemeFromConfig } from "../store/theme";
 import { useGlobalConfig, initConfigListener } from "../store/globalConfig";
 import { useStats, isHighRune } from "../store/stats";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
 import { useWindowGeometrySave } from "../hooks/useWindowGeometrySave";
 import { usePreventDragRegionDoubleClick } from "../hooks/useAppEffects";
@@ -19,6 +20,7 @@ interface OcrTextItem {
   rune_number?: number | null;
   screenshot_path?: string | null;
   is_town?: boolean;
+  is_menu?: boolean;
   rune_name_en?: string | null;
 }
 
@@ -471,6 +473,68 @@ export function Overlay() {
     return () => clearInterval(interval);
   }, [isPollerActive]);
 
+  // ── 事件监听：ESC + Ctrl+Shift+P + 配置同步 ──
+  useEffect(() => {
+    const unlisteners: (() => void)[] = [];
+
+    // ESC 键 → 触发菜单检测
+    listen("esc-pressed", () => {
+      if (import.meta.env.VITE_ENABLE_OCR !== "false") {
+        invoke("enable_menu_detection").catch(() => {});
+      }
+    }).then(fn => unlisteners.push(fn));
+
+    // Ctrl+Shift+P → 暂停/恢复计时
+    listen("ocr-toggle-pause", () => {
+      const { isTiming, isPaused, pauseTimer, resumeTimer } = useStats.getState();
+      if (!isTiming) return;
+      if (isPaused) resumeTimer();
+      else pauseTimer();
+    }).then(fn => unlisteners.push(fn));
+
+    // 同步计时配置到 stats store
+    if (config) {
+      useStats.getState().loadTimingConfig({
+        ocr_timing_mode: config.ocr_timing_mode,
+        ocr_phase_config_json: config.ocr_phase_config_json,
+      });
+    }
+
+    return () => { unlisteners.forEach(fn => fn()); };
+  }, [config?.ocr_timing_mode, config?.ocr_phase_config_json, isPollerActive]);
+
+  // ── 切屏自动暂停 ──
+  useEffect(() => {
+    if (!isPollerActive || !config?.ocr_auto_pause_on_switch) return;
+    let debounceCount = 0;
+    let prevFocused = true;
+
+    const check = () => {
+      const { isTiming, isPaused, pauseTimer, resumeTimer } = useStats.getState();
+      if (!isTiming) return;
+
+      const isGameFocused = foregroundTitle.length > 0;
+
+      if (!isGameFocused && !isPaused) {
+        debounceCount++;
+        if (debounceCount >= 2) {
+          pauseTimer();
+          prevFocused = false;
+        }
+      } else if (isGameFocused && isPaused && !prevFocused) {
+        debounceCount = 0;
+        prevFocused = true;
+        resumeTimer();
+      } else {
+        debounceCount = 0;
+        prevFocused = isGameFocused;
+      }
+    };
+
+    const interval = setInterval(check, 1000);
+    return () => clearInterval(interval);
+  }, [config?.ocr_auto_pause_on_switch, foregroundTitle, isPollerActive]);
+
   // ── OCR 数据轮询（场景 + 掉落）──
   useEffect(() => {
     if (!isPollerActive || import.meta.env.VITE_ENABLE_OCR === "false" || !config?.ocr_enabled) return;
@@ -675,10 +739,18 @@ export function Overlay() {
 
         {import.meta.env.VITE_ENABLE_OCR !== "false" && (
           <>
-        {/* 场景名称 — 右上角小字 */}
-        <div className="flex justify-end px-1" data-tauri-drag-region>
+        {/* 场景名称 — 右上角小字 + 模式标签 + 目标标记 */}
+        <div className="flex justify-end items-center gap-1 px-1" data-tauri-drag-region>
+          {stats.timingMode !== "full_clear" && (
+            <span className="text-[10px] text-text-muted px-1 leading-none" data-tauri-drag-region>
+              {stats.timingMode === "single_scene" ? "单场景" : "阶段"}
+            </span>
+          )}
+          {stats.targetReached && (
+            <span className="text-xs text-[var(--success)] leading-none" title="已到达目标场景" data-tauri-drag-region>✓</span>
+          )}
           <span
-            className="text-sm font-medium text-text-secondary truncate max-w-[180px] text-right"
+            className="text-sm font-medium text-text-secondary truncate max-w-[160px] text-right"
             data-tauri-drag-region
           >
             {translateOverlaySceneName(stats.currentScene, useEnglish)}
@@ -687,21 +759,54 @@ export function Overlay() {
 
         {/* 计时器 — 大字居中，无背景容器 */}
         <div className="flex flex-col items-center py-1.5" data-tauri-drag-region>
-          <span
-            className="text-xl font-mono font-bold tabular-nums leading-none select-none"
-            style={{
-              color: stats.isTiming ? "var(--success)" : "var(--text-muted)",
-              textShadow: stats.isTiming ? "0 0 20px rgba(76,175,80,0.3)" : "none",
-              transition: "color 0.3s, text-shadow 0.3s",
-            }}
-            data-tauri-drag-region
-          >
-            {elapsedDisplay}
-          </span>
+          <div className="relative flex items-center justify-center" data-tauri-drag-region>
+            <span
+              className="text-xl font-mono font-bold tabular-nums leading-none select-none"
+              style={{
+                color: stats.isTiming && !stats.isPaused ? "var(--success)" : "var(--text-muted)",
+                textShadow: stats.isTiming && !stats.isPaused ? "0 0 20px rgba(76,175,80,0.3)" : "none",
+                transition: "color 0.3s, text-shadow 0.3s",
+              }}
+              data-tauri-drag-region
+            >
+              {stats.isPaused ? (stats.pausedAtMs / 1000).toFixed(1) : elapsedDisplay}
+            </span>
+            {/* 暂停/继续按钮 */}
+            {stats.isTiming && !stats.isPaused && (
+              <button
+                className="ml-1.5 p-0.5 rounded hover:bg-surface/50 transition-colors"
+                onClick={(e) => { e.stopPropagation(); stats.pauseTimer(); }}
+                title="暂停计时 (Ctrl+Shift+P)"
+              >
+                <Pause size={12} className="text-text-muted" />
+              </button>
+            )}
+            {stats.isPaused && (
+              <>
+                <button
+                  className="ml-1.5 p-0.5 rounded hover:bg-surface/50 transition-colors"
+                  onClick={(e) => { e.stopPropagation(); stats.resumeTimer(); }}
+                  title="继续计时 (Ctrl+Shift+P)"
+                >
+                  <Play size={12} className="text-[var(--success)]" />
+                </button>
+                <button
+                  className="ml-0.5 p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                  onClick={(e) => { e.stopPropagation(); stats.stopTimer(); }}
+                  title="结束本轮并保存"
+                >
+                  <Square size={11} className="text-red-400" />
+                </button>
+              </>
+            )}
+          </div>
+          {stats.isPaused && (
+            <span className="text-[10px] text-text-muted mt-0.5 select-none" data-tauri-drag-region>已暂停</span>
+          )}
           <span
             className="text-xs font-mono mt-0.5 select-none"
             style={{
-              color: stats.isTiming ? "var(--success)" : "var(--text-muted)",
+              color: stats.isTiming && !stats.isPaused ? "var(--success)" : "var(--text-muted)",
               opacity: 0.6,
             }}
             data-tauri-drag-region

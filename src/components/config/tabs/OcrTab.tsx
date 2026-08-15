@@ -92,6 +92,47 @@ export function OcrTab() {
         </div>
       </div>
 
+      {/* 计时模式 */}
+      <div className="space-y-1.5">
+        <span className="text-xs text-text-muted font-medium">计时模式</span>
+        <select
+          value={config.ocr_timing_mode || "full_clear"}
+          onChange={async (e) => {
+            await save({ ...config, ocr_timing_mode: e.target.value });
+          }}
+          className="w-full h-8 px-2.5 rounded-lg text-md text-text-primary focus:outline-none focus:ring-1 focus:ring-accent/40"
+          style={{ background: 'var(--surface-base)', border: '1px solid var(--border-default)' }}
+        >
+          <option value="full_clear">通刷模式 — 每个场景独立计时</option>
+          <option value="single_scene">单场景模式 — 主城出发到回城算一轮</option>
+          <option value="start_middle_end">阶段标记 — 自定义开始/目标/结束</option>
+        </select>
+      </div>
+
+      {/* 切屏自动暂停 */}
+      <div
+        onClick={async () => {
+          await save({ ...config, ocr_auto_pause_on_switch: !config.ocr_auto_pause_on_switch });
+        }}
+        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-md
+          transition-all duration-150 text-left cursor-pointer"
+        style={{ color: 'var(--text-secondary)' }}
+      >
+        <div className="flex-1">
+          <p className="font-medium">切屏自动暂停</p>
+          <p className="text-xs text-text-muted mt-0.5">切换到其他窗口时自动暂停计时，切回游戏自动恢复</p>
+        </div>
+        <div className="shrink-0 mr-1 pointer-events-none">
+          <Toggle checked={!!config.ocr_auto_pause_on_switch} onChange={() => {}} />
+        </div>
+      </div>
+
+      {/* 快捷键提示 */}
+      <div className="px-1 text-xs text-text-muted space-y-0.5">
+        <p>快捷键：<kbd className="px-1 py-0.5 rounded bg-surface/50 text-[10px] font-mono">Ctrl+Shift+P</kbd> 暂停/恢复计时</p>
+        <p>按 <kbd className="px-1 py-0.5 rounded bg-surface/50 text-[10px] font-mono">ESC</kbd> 退出到主界面时自动结束本轮计时</p>
+      </div>
+
       {/* Restart OCR */}
       <button onClick={async () => {
           try {

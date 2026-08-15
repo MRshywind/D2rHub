@@ -63,6 +63,8 @@ pub struct OcrTextItem {
     pub screenshot_path: Option<String>,
     #[serde(default)]
     pub is_town: bool,
+    #[serde(default)]
+    pub is_menu: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rune_name_en: Option<String>,
 }
@@ -299,4 +301,32 @@ pub fn stop_ocr_monitor() {
     if let Some(lock) = MONITOR.get() {
         *lock.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
+}
+
+/// 获取所有场景名称（包括主城和菜单界面），供前端设置面板使用
+#[tauri::command]
+pub fn get_all_scene_names() -> Vec<String> {
+    let mut names: Vec<String> = game_data::SCENE_NAME_SET.iter().map(|s| s.to_string()).collect();
+    for name in game_data::MAIN_CITY_NAME_SET.iter() {
+        names.push(name.to_string());
+    }
+    for name in game_data::MENU_STATE_NAMES.iter() {
+        names.push(name.to_string());
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// 启用菜单检测模式（ESC 触发，Pipeline 每轮 poll 额外检测右上角菜单文字）
+#[tauri::command]
+pub fn enable_menu_detection() -> Result<(), String> {
+    if let Some(lock) = MONITOR.get() {
+        let mut guard = lock.lock().map_err(|e| e.to_string())?;
+        if let Some(ref mut monitor) = *guard {
+            monitor.enable_menu_detection();
+            return Ok(());
+        }
+    }
+    Err("OCR 监控器未运行".to_string())
 }
