@@ -182,7 +182,6 @@ const textMap: Record<string, string> = {
   "识别所有场景地点与符文掉落，#24 以上高级符文额外截图保存": "Recognize scene locations and rune drops. Runes #24+ save extra screenshots.",
   "识别目标账号": "OCR Target Account",
   "哪个游戏账号对应哪一个窗口将接受 OCR 检测": "Choose which account/window receives OCR detection",
-  "当前聚焦窗口": "Current Focused Window",
   "OCR 帧采样轮询间隔 (ms)": "OCR Frame Poll Interval (ms)",
   "两次屏幕截取分析的时间差，设置过小可能消耗较高 CPU": "Interval between screen captures. Lower values may use more CPU.",
   "高刷新-高负荷": "high refresh / high load",

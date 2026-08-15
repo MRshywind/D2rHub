@@ -1,7 +1,7 @@
 {
   "name": "d2rhub",
   "private": true,
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "Windows multi-account manager and OCR run tracker for Diablo II: Resurrected",
   "license": "MIT",
   "repository": {
@@ -21,7 +21,7 @@
     "build:full:nsis": "cross-env VITE_ENABLE_OCR=true tauri build --bundles nsis",
     "build:lite:nsis": "cross-env VITE_ENABLE_OCR=false tauri build --bundles nsis --config src-tauri/tauri.lite.conf.json -- --no-default-features",
     "build:all": "npm run build:full && npm run build:lite",
-    "test": "node scripts/run-shortcut-tests.cjs",
+    "test": "node scripts/run-tests.cjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

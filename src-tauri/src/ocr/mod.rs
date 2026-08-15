@@ -5,43 +5,62 @@ pub mod pipeline;
 pub mod fuzzy;
 pub mod game_data;
 
+use crate::commands::account::AccountMeta;
+use crate::commands::global_config::GlobalConfig;
+use pipeline::OcrMonitor;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
 use tauri::Manager;
-use pipeline::OcrMonitor;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct OcrConfig {
     pub window_title: String,
     /// 目标游戏进程 PID（优先于 window_title，用于精确定位窗口）
-    #[serde(default)]
     pub target_pid: Option<u32>,
-    #[serde(default = "default_poll_interval")]
     pub poll_interval_ms: u64,
-    #[serde(default = "default_debug_output")]
     pub debug_output: bool,
-    #[serde(default = "default_text_matcher_threshold")]
     pub text_matcher_threshold: u8,
-    #[serde(default = "default_rune_matcher_threshold")]
     pub rune_matcher_threshold: u8,
-    #[serde(default)]
     pub use_cuda: bool,
-    #[serde(default = "default_scene_text_color_rgb")]
     pub scene_text_color_rgb: [u8; 3],
-    #[serde(default = "default_scene_text_color_range")]
     pub scene_text_color_range: [u8; 3],
-    #[serde(default = "default_rune_text_color_rgb")]
     pub rune_text_color_rgb: [u8; 3],
-    #[serde(default = "default_rune_text_color_range")]
     pub rune_text_color_range: [u8; 3],
-    #[serde(alias = "rune_blackground_color_rgb", default = "default_rune_background_color_rgb")]
     pub rune_background_color_rgb: [u8; 3],
-    #[serde(alias = "rune_blackground_color_range", default = "default_rune_background_color_range")]
     pub rune_background_color_range: [u8; 3],
 }
-fn default_poll_interval() -> u64 { 500 }
-fn default_debug_output() -> bool { false }
+
+impl OcrConfig {
+    fn from_account(
+        global_config: &GlobalConfig,
+        account: &AccountMeta,
+        target_pid: Option<u32>,
+    ) -> Self {
+        let window_title = if account.display_name.trim().is_empty() {
+            account.id.clone()
+        } else {
+            account.display_name.clone()
+        };
+
+        Self {
+            window_title,
+            target_pid,
+            poll_interval_ms: global_config.ocr_poll_interval_ms,
+            debug_output: global_config.ocr_debug_output,
+            text_matcher_threshold: default_text_matcher_threshold(),
+            rune_matcher_threshold: default_rune_matcher_threshold(),
+            use_cuda: false,
+            scene_text_color_rgb: default_scene_text_color_rgb(),
+            scene_text_color_range: default_scene_text_color_range(),
+            rune_text_color_rgb: default_rune_text_color_rgb(),
+            rune_text_color_range: default_rune_text_color_range(),
+            rune_background_color_rgb: default_rune_background_color_rgb(),
+            rune_background_color_range: default_rune_background_color_range(),
+        }
+    }
+}
+
 fn default_text_matcher_threshold() -> u8 { 67 }
 fn default_rune_matcher_threshold() -> u8 { 67 }
 fn default_scene_text_color_rgb() -> [u8; 3] { [202, 23, 0] }
@@ -74,6 +93,36 @@ static CH_A_RESULTS: std::sync::OnceLock<Mutex<Vec<OcrTextItem>>> = std::sync::O
 static CH_B_RESULTS: std::sync::OnceLock<Mutex<Vec<OcrTextItem>>> = std::sync::OnceLock::new();
 static MONITOR: std::sync::OnceLock<Mutex<Option<OcrMonitor>>> = std::sync::OnceLock::new();
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn resolve_monitor_config(app: &tauri::AppHandle) -> Result<OcrConfig, String> {
+    let state = app.state::<crate::state::SharedState>();
+    let (global_config, account) = {
+        let config = state.config.read();
+        let global_config = config
+            .as_ref()
+            .ok_or_else(|| "尚未完成首次配置".to_string())?;
+        let account = global_config
+            .resolve_ocr_target_account()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "OCR 尚未启用".to_string())?;
+        (global_config.clone(), account)
+    };
+    let target_pid = state
+        .active_games
+        .read()
+        .get(&account.id)
+        .copied()
+        .or(account.running_pid);
+
+    Ok(OcrConfig::from_account(&global_config, &account, target_pid))
+}
+
+fn mark_generation_stopped(generation: u64) {
+    if GENERATION.load(Ordering::SeqCst) == generation {
+        RUNNING.store(false, Ordering::SeqCst);
+    }
+}
 
 fn install_ocr_worker_panic_hook(debug_dir_for_panic: Option<std::path::PathBuf>) {
     std::panic::set_hook(Box::new(move |info| {
@@ -122,7 +171,8 @@ pub fn get_ocr_ch_b_results() -> Vec<OcrTextItem> {
 
 /// 启动 OCR 轮询 (2Hz)
 #[tauri::command]
-pub fn start_ocr_monitor(app: tauri::AppHandle, config: OcrConfig) -> Result<(), String> {
+pub fn start_ocr_monitor(app: tauri::AppHandle) -> Result<(), String> {
+    let config = resolve_monitor_config(&app)?;
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("OCR 监控器已在运行中".to_string());
     }
@@ -164,7 +214,6 @@ pub fn start_ocr_monitor(app: tauri::AppHandle, config: OcrConfig) -> Result<(),
     let is_debug = config.debug_output;
     let use_cuda = config.use_cuda;
 
-    static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let my_gen = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
 
     std::thread::Builder::new().name("ocr-worker".into()).spawn(move || {
@@ -189,7 +238,7 @@ pub fn start_ocr_monitor(app: tauri::AppHandle, config: OcrConfig) -> Result<(),
         let resource_dir = app.path().resource_dir().ok();
         if let Err(e) = engine::init_engine(&app_data_dir, resource_dir.as_deref(), use_cuda) {
             eprintln!("[OCR Error] Failed to init engine on worker thread: {}", e);
-            RUNNING.store(false, Ordering::SeqCst);
+            mark_generation_stopped(my_gen);
             unsafe { windows::Win32::System::Com::CoUninitialize(); }
             return;
         }
@@ -217,7 +266,7 @@ pub fn start_ocr_monitor(app: tauri::AppHandle, config: OcrConfig) -> Result<(),
                     Ok(false) => { break; }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         eprintln!("[OCR Error] OCR poll timeout ({}ms). Worker thread may be deadlocked.", timeout_ms);
-                        RUNNING.store(false, Ordering::SeqCst);
+                        mark_generation_stopped(my_gen);
                         break;
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -282,14 +331,17 @@ pub fn start_ocr_monitor(app: tauri::AppHandle, config: OcrConfig) -> Result<(),
         }
 
         let _ = watchdog_tx.send(false);
-        RUNNING.store(false, Ordering::SeqCst);
+        mark_generation_stopped(my_gen);
         eprintln!("[OCR Info] Worker thread exited");
 
         // Clean up COM runtime before thread exit
         unsafe {
             windows::Win32::System::Com::CoUninitialize();
         }
-    }).map_err(|e| format!("创建工作线程失败: {}", e))?;
+    }).map_err(|e| {
+        mark_generation_stopped(my_gen);
+        format!("创建工作线程失败: {}", e)
+    })?;
 
     Ok(())
 }
@@ -297,6 +349,7 @@ pub fn start_ocr_monitor(app: tauri::AppHandle, config: OcrConfig) -> Result<(),
 /// 停止 OCR 轮询
 #[tauri::command]
 pub fn stop_ocr_monitor() {
+    GENERATION.fetch_add(1, Ordering::SeqCst);
     RUNNING.store(false, Ordering::SeqCst);
     if let Some(lock) = MONITOR.get() {
         *lock.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -329,4 +382,11 @@ pub fn enable_menu_detection() -> Result<(), String> {
         }
     }
     Err("OCR 监控器未运行".to_string())
+}
+
+/// 使用已保存的全局配置原子地重启 OCR。
+#[tauri::command]
+pub fn restart_ocr_monitor(app: tauri::AppHandle) -> Result<(), String> {
+    stop_ocr_monitor();
+    start_ocr_monitor(app)
 }

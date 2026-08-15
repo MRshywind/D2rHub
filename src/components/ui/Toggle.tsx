@@ -3,6 +3,8 @@ interface ToggleProps {
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   label?: string;
+  ariaLabel?: string;
+  descriptionId?: string;
 }
 
 export function Toggle({
@@ -10,6 +12,8 @@ export function Toggle({
   onChange,
   disabled = false,
   label,
+  ariaLabel,
+  descriptionId,
 }: ToggleProps) {
   return (
     <label
@@ -23,7 +27,8 @@ export function Toggle({
       <button
         role="switch"
         aria-checked={checked}
-        aria-label={label || (checked ? "关闭开关" : "开启开关")}
+        aria-label={ariaLabel || label || (checked ? "关闭开关" : "开启开关")}
+        aria-describedby={descriptionId}
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full

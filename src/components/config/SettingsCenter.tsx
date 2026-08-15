@@ -33,6 +33,7 @@ import {
   SettingsMap
 } from "../../pages/SettingsEditor";
 import type { GlobalConfig } from "../../store/types";
+import { validateOcrTarget } from "../../utils/ocrTarget";
 
 // Helper for quadratic opacity mapping
 // Map slider value s (0..100) to stored percentage p (10..100)
@@ -68,6 +69,8 @@ export function SettingsCenter({ open, onClose, onReconfigure, initialTab, initi
   const { config, save, detectBattleNetPath, detectSavedGamesPath, detectProgramDataAgentPath, detectAppDataRoamingBnetPath, detectBrowserPath } = useGlobalConfig();
   const { accounts, loadAccounts, renameAccount, updateAccountMods, repairAllRegistries } = useAccounts();
   const { theme, setTheme } = useTheme();
+  const initializedOcrAccounts = accounts.filter((account) => account.initialized);
+  const ocrTarget = validateOcrTarget(config?.ocr_target_account ?? "", accounts);
 
   // Tab and search state
   const [activeTab, setActiveTab] = useState<TabType>("accounts");
@@ -1192,29 +1195,49 @@ export function SettingsCenter({ open, onClose, onReconfigure, initialTab, initi
                       <p className="text-2xs text-text-muted">识别所有场景地点与符文掉落，#24 以上高级符文额外截图保存</p>
                     </div>
                     <Toggle
-                      checked={!!config.ocr_enabled}
+                      checked={!!config.ocr_enabled && ocrTarget.valid}
+                      disabled={!ocrTarget.valid}
+                      ariaLabel="启用场景符文自动识别"
+                      descriptionId="ocr-target-help"
                       onChange={v => updateConfig(c => { c.ocr_enabled = v; })}
                     />
                   </div>
 
-                  {config.ocr_enabled && (
-                    <div className="space-y-3 border-t border-border-default/50 pt-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-sm font-semibold text-text-secondary">识别目标账号</span>
-                          <p className="text-2xs text-text-muted">哪个游戏账号对应哪一个窗口将接受 OCR 检测</p>
-                        </div>
-                        <select
-                          value={config.ocr_target_account || ""}
-                          onChange={e => updateConfig(c => { c.ocr_target_account = e.target.value; })}
-                          className="h-8 px-2.5 rounded-lg bg-surface-hover border border-border-default text-text-primary text-xs"
-                        >
-                          <option value="">当前聚焦窗口</option>
-                          {accounts.filter(a => a.initialized).map(a => (
-                            <option key={a.id} value={a.id}>{a.display_name || a.id}</option>
-                          ))}
-                        </select>
+                  <div className="space-y-1.5 border-t border-border-default/50 pt-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <label htmlFor="ocr-target-account" className="text-sm font-semibold text-text-secondary">
+                          识别目标账号
+                        </label>
+                        <p className="text-2xs text-text-muted">选择一个已初始化账号作为固定 OCR 识别窗口</p>
                       </div>
+                      <select
+                        id="ocr-target-account"
+                        value={ocrTarget.valid ? ocrTarget.account.id : ""}
+                        disabled={initializedOcrAccounts.length === 0}
+                        aria-describedby="ocr-target-help"
+                        onChange={e => updateConfig(c => { c.ocr_target_account = e.target.value; })}
+                        className="h-8 min-w-36 px-2.5 rounded-lg bg-surface-hover border border-border-default text-text-primary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="" disabled>
+                          {initializedOcrAccounts.length === 0 ? "暂无可用账号" : "请选择账号"}
+                        </option>
+                        {initializedOcrAccounts.map(account => (
+                          <option key={account.id} value={account.id}>{account.display_name || account.id}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p id="ocr-target-help" aria-live="polite" className="text-2xs text-text-secondary">
+                      {initializedOcrAccounts.length === 0
+                        ? "请先初始化至少一个账号，才能启用 OCR。"
+                        : ocrTarget.valid
+                          ? `OCR 将固定监测“${ocrTarget.account.display_name || ocrTarget.account.id}”的游戏窗口。`
+                          : "请先选择目标账号，才能启用 OCR。"}
+                    </p>
+                  </div>
+
+                  {config.ocr_enabled && ocrTarget.valid && (
+                    <div className="space-y-3 border-t border-border-default/50 pt-3">
 
                       <div className="flex items-center justify-between">
                         <div>
@@ -1282,38 +1305,31 @@ export function SettingsCenter({ open, onClose, onReconfigure, initialTab, initi
 
                       {/* Restart OCR button */}
                       <div className="border-t border-border-default/50 pt-3">
-                        <button
+                        <Button
+                          variant="secondary"
+                          size="md"
                           onClick={async () => {
                             try {
-                              await invoke("stop_ocr_monitor").catch(() => {});
-                              const targetAccount = accounts.find(a => a.id === config.ocr_target_account);
-                              const winTitle = targetAccount?.display_name || config.ocr_target_account || "";
-                              const targetPid = targetAccount?.running_pid ?? null;
-                              await invoke("start_ocr_monitor", {
-                                config: {
-                                  window_title: winTitle,
-                                  target_pid: targetPid,
-                                  poll_interval_ms: config.ocr_poll_interval_ms ?? 500,
-                                  debug_output: config.ocr_debug_output ?? false,
-                                },
-                              });
+                              await save(config);
+                              setOriginalConfig(JSON.parse(JSON.stringify(config)));
+                              await invoke("restart_ocr_monitor");
                               showToast("success", "OCR 已用新配置重启");
                             } catch (e) {
                               showToast("error", "重启 OCR 失败: " + e);
                             }
                           }}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-md font-medium text-accent bg-accent/10 hover:bg-accent/20 transition-all duration-150"
+                          className="w-full"
                         >
                           <RotateCw size={13} className="shrink-0" />
                           应用配置并重启 OCR
-                        </button>
+                        </Button>
                         <p className="text-2xs text-text-muted text-center mt-1">使用当前参数重新启动 OCR 识别</p>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {config.ocr_enabled && (
+                {config.ocr_enabled && ocrTarget.valid && (
                   <div className="spatial-panel p-4 space-y-2">
                     <span className="text-xs font-bold text-text-primary block mb-1">OCR 统计结果</span>
                     <p className="text-2xs text-text-muted">查看当前数据库内的符文掉落与统计信息</p>

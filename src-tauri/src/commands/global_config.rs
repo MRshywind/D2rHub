@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::commands::account::{AccountManager, AccountMeta};
 use crate::error::AppError;
 use crate::state::SharedState;
 
@@ -195,8 +196,9 @@ fn validate_config_paths(config: &GlobalConfig) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
-mod saved_games_validation_tests {
+mod validation_tests {
     use super::{saved_games_settings_exists, validate_config_paths, GlobalConfig};
+    use crate::commands::account::{AccountManager, AccountMeta};
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
         let unique = format!(
@@ -238,6 +240,62 @@ mod saved_games_validation_tests {
 
         assert!(saved_games_settings_exists(&saved_games));
         let _ = std::fs::remove_dir_all(saved_games);
+    }
+
+    #[test]
+    fn enabled_ocr_requires_a_selected_account() {
+        let mut config = GlobalConfig::default();
+        config.ocr_enabled = true;
+
+        assert!(config.resolve_ocr_target_account().is_err());
+    }
+
+    #[test]
+    fn disabled_ocr_does_not_require_a_target_account() {
+        let config = GlobalConfig::default();
+
+        assert!(config.resolve_ocr_target_account().unwrap().is_none());
+    }
+
+    #[test]
+    fn enabled_ocr_requires_an_initialized_account() {
+        let accounts_dir = temp_dir("ocr_uninitialized_account");
+        let account = AccountMeta::new("acount1");
+        AccountManager::save_meta(accounts_dir.to_str().unwrap(), &account).unwrap();
+
+        let mut config = GlobalConfig::default();
+        config.accounts_dir = accounts_dir.to_string_lossy().to_string();
+        config.ocr_enabled = true;
+        config.ocr_target_account = account.id;
+
+        assert!(config.resolve_ocr_target_account().is_err());
+        let _ = std::fs::remove_dir_all(accounts_dir);
+    }
+
+    #[test]
+    fn enabled_ocr_accepts_an_initialized_account() {
+        let accounts_dir = temp_dir("ocr_initialized_account");
+        let mut account = AccountMeta::new("acount1");
+        account.initialized = true;
+        AccountManager::save_meta(accounts_dir.to_str().unwrap(), &account).unwrap();
+
+        let mut config = GlobalConfig::default();
+        config.accounts_dir = accounts_dir.to_string_lossy().to_string();
+        config.ocr_enabled = true;
+        config.ocr_target_account = account.id.clone();
+
+        let resolved = config.resolve_ocr_target_account().unwrap().unwrap();
+        assert_eq!(resolved.id, account.id);
+        let _ = std::fs::remove_dir_all(accounts_dir);
+    }
+
+    #[test]
+    fn invalid_legacy_ocr_configuration_is_disabled() {
+        let mut config = GlobalConfig::default();
+        config.ocr_enabled = true;
+
+        assert!(config.normalize_ocr_configuration());
+        assert!(!config.ocr_enabled);
     }
 }
 
@@ -296,6 +354,41 @@ impl Default for GlobalConfig {
 }
 
 impl GlobalConfig {
+    /// 解析并验证当前 OCR 目标。OCR 关闭时不要求配置目标账号。
+    pub(crate) fn resolve_ocr_target_account(&self) -> Result<Option<AccountMeta>, AppError> {
+        if !self.ocr_enabled {
+            return Ok(None);
+        }
+
+        let account_id = self.ocr_target_account.trim();
+        if account_id.is_empty() {
+            return Err(AppError::ConfigWriteError(
+                "启用 OCR 前请先选择目标账号".to_string(),
+            ));
+        }
+
+        let account = AccountManager::load_meta(&self.accounts_dir, account_id).map_err(|_| {
+            AppError::ConfigWriteError(format!("OCR 目标账号不存在: {account_id}"))
+        })?;
+        if !account.initialized {
+            return Err(AppError::ConfigWriteError(format!(
+                "OCR 目标账号尚未初始化: {account_id}"
+            )));
+        }
+
+        Ok(Some(account))
+    }
+
+    /// 兼容旧配置：无效目标不能保持 OCR 启用状态。
+    fn normalize_ocr_configuration(&mut self) -> bool {
+        if !self.ocr_enabled || self.resolve_ocr_target_account().is_ok() {
+            return false;
+        }
+
+        self.ocr_enabled = false;
+        true
+    }
+
     fn config_path(app_data_dir: &str) -> PathBuf {
         Path::new(app_data_dir).join("global_config.json")
     }
@@ -313,14 +406,28 @@ impl GlobalConfig {
         let content = std::fs::read_to_string(&path)
             .map_err(|e| AppError::ConfigReadError(e.to_string()))?;
         let mut config: GlobalConfig = serde_json::from_str(&content)?;
+        let mut migrated = false;
+
+        let accounts_dir = app_accounts_dir(app_data_dir).to_string_lossy().to_string();
+        if config.accounts_dir != accounts_dir {
+            config.accounts_dir = accounts_dir;
+            migrated = true;
+        }
+
         // 迁移：从未配置过快捷键的旧用户，自动写入默认值
         if config.shortcut_bindings_json.is_empty() {
             config.shortcut_bindings_json =
                 r#"{"1":"Ctrl+1","2":"Ctrl+2","3":"Ctrl+3"}"#.to_string();
-            let _ = config.save(app_data_dir);
+            migrated = true;
         }
         // 迁移：去除旧版本可能存在的 Win/Meta/Cmd 修饰键（v0.6.6 起不再支持）
-        let migrated = Self::strip_win_modifiers(&mut config.shortcut_bindings_json);
+        migrated |= Self::strip_win_modifiers(&mut config.shortcut_bindings_json);
+
+        if config.normalize_ocr_configuration() {
+            log::warn!("检测到无效的旧版 OCR 目标配置，已自动关闭 OCR");
+            migrated = true;
+        }
+
         if migrated {
             let _ = config.save(app_data_dir);
         }
@@ -522,6 +629,7 @@ pub fn save_global_config(
     if cfg.first_run_complete {
         validate_config_paths(&cfg)?;
     }
+    cfg.resolve_ocr_target_account()?;
 
     cfg.save(&state.app_data_dir)?;
     cfg.ensure_dirs()?;

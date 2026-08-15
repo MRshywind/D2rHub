@@ -7,6 +7,7 @@ import { useAccounts } from "../store/accounts";
 import { useGlobalConfig } from "../store/globalConfig";
 import { showToast } from "../components/ui/Toast";
 import type { GlobalConfig, LaunchProgress } from "../store/types";
+import { validateOcrTarget } from "../utils/ocrTarget";
 
 export function useBongoCatWindow(loading: boolean, config: GlobalConfig | null) {
   const prevEnabledRef = useRef(config?.enable_bongo_cat);
@@ -167,25 +168,17 @@ export function useLaunchEvents(config: GlobalConfig | null) {
     prevLaunchingRef.current = launching;
     if (!wasLaunching || launching || !config) return;
     if (import.meta.env.VITE_ENABLE_OCR === "false") return;
-    if (!config.ocr_enabled || !config.ocr_target_account) return;
+    if (!config.ocr_enabled) return;
 
-    const targetResult = results.find(r => r.account_id === config.ocr_target_account);
+    const target = validateOcrTarget(config.ocr_target_account, accounts);
+    if (!target.valid) return;
+
+    const targetResult = results.find(r => r.account_id === target.account.id);
     if (!targetResult || !targetResult.success) return;
-
-    const targetAccount = accounts.find(a => a.id === config.ocr_target_account);
-    const winTitle = targetAccount?.display_name || config.ocr_target_account;
-    const targetPid = targetAccount?.running_pid ?? null;
 
     const timer = setTimeout(async () => {
       try {
-        await invoke("start_ocr_monitor", {
-          config: {
-            window_title: winTitle,
-            target_pid: targetPid,
-            poll_interval_ms: config.ocr_poll_interval_ms ?? 500,
-            debug_output: config.ocr_debug_output ?? false,
-          }
-        });
+        await invoke("start_ocr_monitor");
         showToast("success", "OCR 监控已自动启动");
       } catch (e) {
         showToast("error", `OCR 启动失败: ${e}`);

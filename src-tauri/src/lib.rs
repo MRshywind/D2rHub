@@ -382,6 +382,7 @@ pub fn run() {
             commands::terror_zone::get_next_terror_zone,
             // ── OCR 文字检测 ──
             #[cfg(feature = "ocr")] ocr::start_ocr_monitor,
+            #[cfg(feature = "ocr")] ocr::restart_ocr_monitor,
             #[cfg(feature = "ocr")] ocr::stop_ocr_monitor,
             #[cfg(feature = "ocr")] ocr::get_ocr_ch_a_results,
             #[cfg(feature = "ocr")] ocr::get_ocr_ch_b_results,

@@ -4,12 +4,16 @@ import { useGlobalConfig } from "../../../store/globalConfig";
 import { useAccounts } from "../../../store/accounts";
 import { showToast } from "../../ui/Toast";
 import { Toggle } from "../../ui/Toggle";
+import { validateOcrTarget } from "../../../utils/ocrTarget";
 
 export function OcrTab() {
   const { config, save } = useGlobalConfig();
   const { accounts } = useAccounts();
 
   if (!config) return null;
+
+  const initializedAccounts = accounts.filter((account) => account.initialized);
+  const ocrTarget = validateOcrTarget(config.ocr_target_account, accounts);
 
   return (
     <div className="space-y-4">
@@ -18,6 +22,10 @@ export function OcrTab() {
       {/* Enable toggle */}
       <div
         onClick={async () => {
+          if (!config.ocr_enabled && !ocrTarget.valid) {
+            showToast("warning", "请先选择 OCR 目标账号");
+            return;
+          }
           await save({ ...config, ocr_enabled: !config.ocr_enabled });
         }}
         className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-md
@@ -30,7 +38,12 @@ export function OcrTab() {
           <p className="text-xs text-text-muted mt-0.5">游戏启动后自动开始 OCR 文字识别</p>
         </div>
         <div className="shrink-0 mr-1 pointer-events-none">
-          <Toggle checked={config.ocr_enabled} onChange={() => {}} />
+          <Toggle
+            checked={config.ocr_enabled && ocrTarget.valid}
+            disabled={!ocrTarget.valid}
+            ariaLabel="启用自动文字识别"
+            onChange={() => {}}
+          />
         </div>
       </div>
 
@@ -57,15 +70,16 @@ export function OcrTab() {
       <div className="space-y-1.5">
         <span className="text-xs text-text-muted font-medium">识别对象（游戏窗口）</span>
         <select
-          value={config.ocr_target_account}
+          value={ocrTarget.valid ? ocrTarget.account.id : ""}
+          disabled={initializedAccounts.length === 0}
           onChange={async (e) => {
             await save({ ...config, ocr_target_account: e.target.value });
           }}
           className="w-full h-8 px-2.5 rounded-lg text-md text-text-primary focus:outline-none focus:ring-1 focus:ring-accent/40"
           style={{ background: 'var(--surface-base)', border: '1px solid var(--border-default)' }}
         >
-          <option value="">-- 选择账号 --</option>
-          {accounts.filter(a => a.initialized).map(a => (
+          <option value="" disabled>{initializedAccounts.length === 0 ? "-- 暂无可用账号 --" : "-- 选择账号 --"}</option>
+          {initializedAccounts.map(a => (
             <option key={a.id} value={a.id}>{a.display_name || a.id} ({a.id})</option>
           ))}
         </select>
@@ -134,22 +148,14 @@ export function OcrTab() {
       </div>
 
       {/* Restart OCR */}
-      <button onClick={async () => {
+      <button disabled={!config.ocr_enabled || !ocrTarget.valid} onClick={async () => {
           try {
-            await invoke("stop_ocr_monitor").catch(()=>{});
-            const targetAccount = accounts.find(a => a.id === config.ocr_target_account);
-            const winTitle = targetAccount?.display_name || config.ocr_target_account || "";
-            const targetPid = targetAccount?.running_pid ?? null;
-            await invoke("start_ocr_monitor", { config: {
-              window_title: winTitle,
-              target_pid: targetPid,
-              poll_interval_ms: config.ocr_poll_interval_ms ?? 500,
-              debug_output: config.ocr_debug_output ?? false,
-            }});
+            await save(config);
+            await invoke("restart_ocr_monitor");
             showToast("success", "OCR 已用新配置重启");
           } catch(e) { showToast("error","重启OCR失败: "+e); }
         }}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-md text-accent hover:bg-accent/10 transition-all duration-150 text-left">
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-md text-accent hover:bg-accent/10 transition-all duration-150 text-left disabled:opacity-50 disabled:cursor-not-allowed">
         <RefreshCw size={13} className="shrink-0" />
         <div>
           <p className="font-medium">应用配置并重启 OCR</p>
