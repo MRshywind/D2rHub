@@ -219,6 +219,7 @@ impl OcrMonitor {
                                 rune_number: None,
                                 screenshot_path: None,
                                 is_town,
+                                is_menu: false,
                                 rune_name_en: None,
                             },
                         );
@@ -532,6 +533,7 @@ impl OcrMonitor {
                         rune_number,
                         screenshot_path,
                         is_town: false,
+                        is_menu: false,
                         rune_name_en,
                     },
                 );
